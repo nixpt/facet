@@ -8,4 +8,4 @@ category = "library"
 platforms = ["linux", "macos", "windows"]
 
 [capabilities]
-required = ["io.print"]
+required = ["io.print", "sys.args", "sys.exit"]
