@@ -1,6 +1,6 @@
 [capsule]
 name = "facet"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI argument parser and help renderer for Crush programs, written in Crush"
 entry = "facet.crush"
 language = "crush"

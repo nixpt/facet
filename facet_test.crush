@@ -168,6 +168,13 @@ fn main() {
     fails = fails + check("help notes choices", contains(help, "choices: 1, 2"))
     fails = fails + check("help notes required", contains(help, "required"))
     fails = fails + check("help lists repeat positional", contains(help, "files..."))
+    fails = fails + check("help shows positional help text", contains(help, "extra files"))
+
+    // entries without `help` render no placeholder text
+    let bare = { name: "bare", flags: [ { long: "--quiet" } ], options: [ { long: "--out", type: "str" } ], positionals: [ { name: "src" } ] }
+    let bare_help = facet_help(bare)
+    fails = fails + check("help without help text has no null", contains(bare_help, "null") == false)
+    fails = fails + check("help without help text still lists entries", contains(bare_help, "--quiet") && contains(bare_help, "--out STR") && contains(bare_help, "src"))
 
     let git_help = facet_help(git)
     fails = fails + check("help lists subcommands", contains(git_help, "Subcommands:"))

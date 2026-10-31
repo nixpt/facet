@@ -258,19 +258,19 @@ fn facet_help(spec) {
     for f in flags {
         let left = __facet_forms(f)
         if len(left) > width { width = len(left) }
-        array.push(opt_rows, { left: left, note: f.help + __facet_flag_note(f) })
+        array.push(opt_rows, { left: left, note: __facet_text(f.help) + __facet_flag_note(f) })
     }
     for o in options {
         let left = __facet_forms(o) + " " + __facet_badge(o)
         if len(left) > width { width = len(left) }
-        array.push(opt_rows, { left: left, note: o.help + __facet_note_option(o) })
+        array.push(opt_rows, { left: left, note: __facet_text(o.help) + __facet_note_option(o) })
     }
     let pos_rows = []
     for p in positionals {
         let left = p.name
         if p.repeat == true { left = left + "..." }
         if len(left) > width { width = len(left) }
-        array.push(pos_rows, { left: left, note: __facet_pos_note(p) })
+        array.push(pos_rows, { left: left, note: __facet_text(p.help) + __facet_pos_note(p) })
     }
     let sub_rows = []
     for s in subs {
@@ -298,6 +298,12 @@ fn facet_help(spec) {
 fn __facet_flag_note(f) {
     if f.required == true { return " (required)" }
     return ""
+}
+
+/// An entry's help text, or "" when the spec gives none (never the text "null").
+fn __facet_text(x) {
+    if x == null { return "" }
+    return x
 }
 
 fn __facet_pos_note(p) {
