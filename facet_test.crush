@@ -183,6 +183,58 @@ fn main() {
     fails = fails + check("usage synth option", contains(facet_usage(spec), "[--name STR]"))
     fails = fails + check("usage synth subcommand", contains(facet_usage(git), "<subcommand>"))
 
+    // spec checking
+    fails = fails + check("good spec has no problems", len(facet_check_spec(spec)) == 0 && len(facet_check_spec(git)) == 0)
+    let typo = { name: "t", options: [ { long: "--out", type: "str", requried: true } ] }
+    let tp = facet_check_spec(typo)
+    fails = fails + check("spec typo is reported", len(tp) == 1 && contains(tp[0], "unknown key 'requried'"))
+    let bad = { flags: [ { help: "no name" } ], options: [ { long: "--n", type: "number" } ], positionals: [ { help: "x" } ] }
+    let bp = facet_check_spec(bad)
+    fails = fails + check("spec without name is reported", contains(__facet_list_text(bp), "needs `name` (the program name)"))
+    fails = fails + check("flag without long/short is reported", contains(__facet_list_text(bp), "needs `long` or `short`"))
+    fails = fails + check("unknown option type is reported", contains(__facet_list_text(bp), "not 'number'"))
+    fails = fails + check("positional without name is reported", contains(__facet_list_text(bp), "positional ?: needs `name`"))
+
+    // about / epilog / version
+    let full = { name: "tool", version: "1.2.3", about: "Does a thing.", epilog: "See also: other.", flags: [ { long: "--dry-run", help: "print only" } ] }
+    let full_help = facet_help(full)
+    fails = fails + check("help shows about", contains(full_help, "Does a thing."))
+    fails = fails + check("help shows epilog last", contains(full_help, "See also: other.") && __facet_find(full_help, "See also") > __facet_find(full_help, "--dry-run"))
+    fails = fails + check("version text", facet_version_text(full) == "tool 1.2.3")
+    let rv = facet_resolve(full, ["--version"])
+    fails = fails + check("--version resolves to version", rv.action == "version" && rv.text == "tool 1.2.3")
+    let rv2 = facet_resolve(full, ["-V"])
+    fails = fails + check("-V resolves to version", rv2.action == "version")
+    let rv3 = facet_resolve(spec, ["--version"])
+    fails = fails + check("--version without spec version is an error", rv3.action == "error" && contains(rv3.text, "--version"))
+    let rv4 = facet_resolve(full, ["--", "--version"])
+    fails = fails + check("--version after -- is not version", rv4.action != "version")
+
+    // resolve: help, subcommand help, errors, run
+    fails = fails + check("resolve --help", facet_resolve(spec, ["--help"]).action == "help")
+    let rs = facet_resolve(git, ["add", "--help"])
+    fails = fails + check("subcommand --help is the subcommand's help", rs.action == "help" && contains(rs.text, "git add") && contains(rs.text, "path"))
+    let rp = facet_resolve(git, ["--help"])
+    fails = fails + check("parent --help lists subcommands", rp.action == "help" && contains(rp.text, "Subcommands:"))
+    let re = facet_resolve(spec, ["--bogus"])
+    fails = fails + check("resolve error", re.action == "error" && contains(re.text, "--bogus"))
+    let rr = facet_resolve(spec, ["--name", "Ada"])
+    fails = fails + check("resolve run", rr.action == "run" && rr.args.name == "Ada")
+
+    let rse = facet_resolve(git, ["add"])
+    fails = fails + check("subcommand error carries the subcommand spec", rse.action == "error" && contains(facet_usage(rse.spec), "git add"))
+    let rpe = facet_resolve(spec, ["--bogus"])
+    fails = fails + check("top-level error carries the top spec", contains(facet_usage(rpe.spec), "Usage: greet"))
+    fails = fails + check("help has no trailing newline", __facet_find(facet_help(git), "\n") >= 0 && facet_help(git)[len(facet_help(git)) - 1:len(facet_help(git))] != "\n")
+
+    // dispatch
+    let calls = []
+    let flat_out = facet_dispatch(spec, { main: |a| => "main:" + a.name }, rr.args)
+    fails = fails + check("dispatch main", flat_out == "main:Ada")
+    let ga = facet_resolve(git, ["add", "x.txt"])
+    let sub_out = facet_dispatch(git, { add: |a| => "add:" + a.path, status: |a| => "status" }, ga.args)
+    fails = fails + check("dispatch subcommand", sub_out == "add:x.txt")
+
     if fails > 0 {
         print("FAILED: " + conv.to_str(fails) + " check(s)")
         sys.exit(1)

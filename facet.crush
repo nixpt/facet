@@ -279,6 +279,7 @@ fn facet_help(spec) {
     }
 
     let out = facet_usage(spec) + "\n\n"
+    if spec.about != null { out = out + spec.about + "\n\n" }
     if len(opt_rows) > 0 {
         out = out + __facet_render_section("Options:", opt_rows, width) + "\n"
     }
@@ -286,11 +287,12 @@ fn facet_help(spec) {
         out = out + __facet_render_section("Positionals:", pos_rows, width) + "\n"
     }
     if len(sub_rows) > 0 {
-        out = out + __facet_render_section("Subcommands:", sub_rows, width)
+        out = out + __facet_render_section("Subcommands:", sub_rows, width) + "\n"
     }
+    if spec.epilog != null { out = out + spec.epilog + "\n" }
     // Trim the final newline; callers print the text as-is.
-    if len(out) > 0 && out[len(out) - 1:len(out)] == "\n" {
-        return out[0:len(out) - 1]
+    while len(out) > 0 && out[len(out) - 1:len(out)] == "\n" {
+        out = out[0:len(out) - 1]
     }
     return out
 }
@@ -335,7 +337,7 @@ fn __facet_sub_spec(parent, sub) {
         usage = usage + __facet_usage_options(sub.options)
         usage = usage + __facet_usage_positionals(sub.positionals)
     }
-    return { name: parent.name, usage: usage, flags: sub.flags, options: sub.options, positionals: sub.positionals }
+    return { name: parent.name, usage: usage, about: sub.about, epilog: sub.epilog, flags: sub.flags, options: sub.options, positionals: sub.positionals }
 }
 
 /// Parse an already-given argv (no sys.args, no output, no exit).
@@ -547,47 +549,197 @@ fn __facet_parse_flat(spec, argv) {
     return { ok: true, data: data, error: null }
 }
 
-// ── --help handling ────────────────────────────────────────────────────────
+// ── spec checking ──────────────────────────────────────────────────────────
 
-fn __facet_claims_help(spec) {
-    for f in __facet_list(spec.flags) {
-        if f.long == "--help" || f.short == "-h" { return true }
-    }
-    for o in __facet_list(spec.options) {
-        if o.long == "--help" || o.short == "-h" { return true }
+fn __facet_is_one_of(value, allowed) {
+    for x in allowed {
+        if x == value { return true }
     }
     return false
 }
 
-fn __facet_wants_help(spec, argv) {
-    if __facet_claims_help(spec) { return false }
+fn __facet_entry_label(e) {
+    if e.long != null { return e.long }
+    if e.short != null { return e.short }
+    if e.name != null { return e.name }
+    return "?"
+}
+
+fn __facet_check_keys(where, e, allowed, problems) {
+    for k in collections.keys(e) {
+        if __facet_is_one_of(k, allowed) == false {
+            array.push(problems, where + ": unknown key '" + k + "' (known: " + __facet_list_text(allowed) + ")")
+        }
+    }
+}
+
+fn __facet_check_entries(where, spec, problems) {
+    let flag_keys = ["short", "long", "name", "default", "required", "help"]
+    let option_keys = ["short", "long", "name", "type", "default", "required", "choices", "env", "help"]
+    let pos_keys = ["name", "type", "default", "required", "repeat", "help"]
+    for f in __facet_list(spec.flags) {
+        let w = where + " flag " + __facet_entry_label(f)
+        __facet_check_keys(w, f, flag_keys, problems)
+        if f.long == null && f.short == null { array.push(problems, w + ": needs `long` or `short`") }
+    }
+    for o in __facet_list(spec.options) {
+        let w = where + " option " + __facet_entry_label(o)
+        __facet_check_keys(w, o, option_keys, problems)
+        if o.long == null && o.short == null { array.push(problems, w + ": needs `long` or `short`") }
+        if o.type != null && __facet_is_one_of(o.type, ["str", "int", "float", "bool"]) == false {
+            array.push(problems, w + ": type must be str, int, float or bool, not '" + conv.to_str(o.type) + "'")
+        }
+    }
+    for p in __facet_list(spec.positionals) {
+        let w = where + " positional " + __facet_entry_label(p)
+        __facet_check_keys(w, p, pos_keys, problems)
+        if p.name == null { array.push(problems, w + ": needs `name`") }
+    }
+}
+
+/// Problems in a spec map, as readable lines ([] when the spec is fine):
+/// unknown keys (typos like `requried`), entries with no `long`/`short`,
+/// a positional without `name`, an unknown option `type`, a spec without
+/// `name`. facet_parse refuses a spec with problems (exit 70) so mistakes
+/// show up on the first run instead of as silently ignored keys.
+fn facet_check_spec(spec) {
+    let problems = []
+    __facet_check_keys("spec", spec, ["name", "usage", "version", "about", "epilog", "flags", "options", "positionals", "subcommands"], problems)
+    if spec.name == null { array.push(problems, "spec: needs `name` (the program name)") }
+    __facet_check_entries("spec", spec, problems)
+    for s in __facet_list(spec.subcommands) {
+        let w = "subcommand " + __facet_entry_label(s)
+        __facet_check_keys(w, s, ["name", "usage", "help", "about", "epilog", "flags", "options", "positionals"], problems)
+        if s.name == null { array.push(problems, w + ": needs `name`") }
+        __facet_check_entries(w, s, problems)
+    }
+    return problems
+}
+
+// ── --help / --version handling ────────────────────────────────────────────
+
+fn __facet_claims(spec, long, short) {
+    for f in __facet_list(spec.flags) {
+        if f.long == long || f.short == short { return true }
+    }
+    for o in __facet_list(spec.options) {
+        if o.long == long || o.short == short { return true }
+    }
+    return false
+}
+
+/// True when argv asks for `long`/`short` before any `--` and the spec has
+/// not claimed that flag for itself.
+fn __facet_asks(spec, argv, long, short) {
+    if __facet_claims(spec, long, short) { return false }
     let i = 0
     while i < len(argv) {
         let tok = argv[i]
         if tok == "--" { return false }
-        if tok == "-h" || tok == "--help" { return true }
+        if tok == long || tok == short { return true }
         i = i + 1
     }
     return false
 }
 
-// ── public entry point ─────────────────────────────────────────────────────
+fn __facet_wants_help(spec, argv) {
+    return __facet_asks(spec, argv, "--help", "-h")
+}
 
-/// Parse `sys.args()` against `spec`. On any problem: print
-/// `facet: <name>: <error>`, the usage line, a --help hint, then exit(2).
-/// `-h`/`--help` (unless the spec claims them) prints full help and exit(0).
-fn facet_parse(spec) {
-    let argv = sys.args()
-    if __facet_wants_help(spec, argv) {
-        io.print(facet_help(spec))
-        sys.exit(0)
+/// `name version` for `--version`; "" when the spec has no `version`.
+fn facet_version_text(spec) {
+    if spec.version == null { return "" }
+    return spec.name + " " + conv.to_str(spec.version)
+}
+
+/// Decide what argv asks for, without printing or exiting:
+///   { action: "help",    text }    -h/--help (a subcommand's own help after it)
+///   { action: "version", text }    --version/-V when the spec has `version`
+///   { action: "error",   text, spec }  a parse error; `spec` is the
+///                                    subcommand's spec when the error is in one
+///   { action: "run",     args }    parsed arguments
+fn facet_resolve(spec, argv) {
+    let subs = __facet_list(spec.subcommands)
+    let error_spec = spec
+    if len(subs) > 0 && len(argv) > 0 {
+        for s in subs {
+            if s.name == argv[0] {
+                let rest = []
+                let i = 1
+                while i < len(argv) {
+                    array.push(rest, argv[i])
+                    i = i + 1
+                }
+                let sub_spec = __facet_sub_spec(spec, s)
+                error_spec = sub_spec
+                if __facet_wants_help(sub_spec, rest) { return { action: "help", text: facet_help(sub_spec) } }
+            }
+        }
+    }
+    if __facet_wants_help(spec, argv) { return { action: "help", text: facet_help(spec) } }
+    if spec.version != null && __facet_asks(spec, argv, "--version", "-V") {
+        return { action: "version", text: facet_version_text(spec) }
     }
     let r = facet_parse_debug(spec, argv)
-    if r.ok == false {
-        io.print("facet: " + spec.name + ": " + r.error)
-        io.print(facet_usage(spec))
-        io.print("run with --help for the full option list")
-        sys.exit(2)
+    if r.ok == false { return { action: "error", text: r.error, spec: error_spec } }
+    return { action: "run", args: r.data }
+}
+
+// ── public entry points ────────────────────────────────────────────────────
+
+/// Print `facet: <name>: <message>`, the usage line and a --help hint, then
+/// exit(2). For a program's own argument checks, so they look like facet's.
+fn facet_fail(spec, message) {
+    io.print("facet: " + spec.name + ": " + message)
+    io.print(facet_usage(spec))
+    io.print("run with --help for the full option list")
+    sys.exit(2)
+}
+
+fn __facet_spec_or_exit(spec) {
+    let problems = facet_check_spec(spec)
+    if len(problems) > 0 {
+        for line in problems { io.print("facet: spec error: " + line) }
+        sys.exit(70)
     }
-    return r.data
+}
+
+/// Parse `sys.args()` against `spec`. On a parse problem: facet_fail (exit 2).
+/// `-h`/`--help` (unless the spec claims them) prints the full help, or a
+/// subcommand's help when given after it, and exits 0; `--version`/`-V`
+/// prints `name version` and exits 0 when the spec has `version`. A spec with
+/// problems (see facet_check_spec) is refused with exit 70.
+fn facet_parse(spec) {
+    __facet_spec_or_exit(spec)
+    let r = facet_resolve(spec, sys.args())
+    if r.action == "help" || r.action == "version" {
+        io.print(r.text)
+        sys.exit(0)
+    }
+    if r.action == "error" { facet_fail(r.spec, r.text) }
+    return r.args
+}
+
+/// Call the handler for the parsed arguments and return its result:
+/// `handlers[args.subcommand]` for a spec with subcommands, `handlers.main`
+/// otherwise. A missing handler is a program error (exit 70).
+fn facet_dispatch(spec, handlers, args) {
+    let key = "main"
+    if __facet_has_arr(spec.subcommands) { key = args.subcommand }
+    for k in collections.keys(handlers) {
+        if k == key {
+            let handler = handlers[key]
+            return handler(args)
+        }
+    }
+    io.print("facet: " + spec.name + ": no handler for '" + key + "' (handlers: " + __facet_list_text(collections.keys(handlers)) + ")")
+    sys.exit(70)
+}
+
+/// facet_parse + facet_dispatch: the whole CLI in one call.
+///
+///   facet_run(spec, { add: |args| => do_add(args), status: |args| => do_status(args) })
+///   facet_run(spec, { main: |args| => run(args) })   // no subcommands
+fn facet_run(spec, handlers) {
+    return facet_dispatch(spec, handlers, facet_parse(spec))
 }
