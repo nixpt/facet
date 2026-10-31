@@ -43,14 +43,41 @@ the spec. Runnable examples in [`demo/`](demo/).
 >
 > Functions are global by design; everything internal is `__facet_`-prefixed.
 
+## A whole CLI in one call
+
+```crush
+fn main() {
+    // keep each map literal on one line until crush-ast CRUSH-345 lands
+    let add = { name: "add", help: "add an item", options: [ { short: "-p", long: "--priority", type: "int", default: 1, choices: [1, 2, 3], help: "1 = low, 3 = urgent" } ], positionals: [ { name: "text", required: true, help: "what to do" } ] }
+    let list = { name: "list", help: "show items", flags: [ { short: "-a", long: "--all", help: "include done items" } ] }
+    let spec = { name: "todo", version: "0.2.0", about: "A tiny todo list.", subcommands: [add, list] }
+
+    facet_run(spec, { add: |args| => cmd_add(spec, args), list: |args| => cmd_list(args) })
+}
+```
+
+That gives `todo --help`, `todo --version`, `todo add --help` (the
+subcommand's own options), typed and validated arguments, and exit status
+0 / 2 everywhere, with no other code. Full program: [`demo/todo.crush`](demo/todo.crush).
+
 ## API
 
 | function | behavior |
 |---|---|
-| `facet_parse(spec)` | parse `sys.args()`; bad input ⇒ `facet: <name>: <error>` + usage + `exit(2)`; `-h`/`--help` ⇒ full help + `exit(0)` |
-| `facet_parse_debug(spec, argv)` | same parse over an argv array; returns `{ ok, data, error }` and never prints or exits (embedders + tests) |
-| `facet_usage(spec)` | one-line `Usage: …` |
-| `facet_help(spec)` | full help text |
+| `facet_run(spec, handlers)` | `facet_parse` + `facet_dispatch`: the whole CLI in one call |
+| `facet_parse(spec)` | parse `sys.args()`. Bad input ⇒ `facet: <name>: <error>` + usage (the subcommand's, if the error is in one) + `exit(2)`. `-h`/`--help` ⇒ full help (or the subcommand's after it) + `exit(0)`. `--version`/`-V` ⇒ `name version` + `exit(0)` when the spec has `version`. A spec with problems ⇒ `facet: spec error: …` + `exit(70)` |
+| `facet_dispatch(spec, handlers, args)` | call `handlers[args.subcommand]` (or `handlers.main` without subcommands) with `args`, return its result; no handler ⇒ `exit(70)` |
+| `facet_fail(spec, message)` | your own argument check, reported like facet's: message + usage + `exit(2)` |
+| `facet_resolve(spec, argv)` | what argv asks for, without printing or exiting: `{ action: "help" \| "version" \| "error" \| "run", text?, args?, spec? }` |
+| `facet_parse_debug(spec, argv)` | the parse alone over an argv array: `{ ok, data, error }` (embedders + tests) |
+| `facet_check_spec(spec)` | problems in a spec as lines (`[]` when fine): unknown keys such as `requried`, entries without `long`/`short`, a positional without `name`, an unknown option `type` |
+| `facet_usage(spec)` / `facet_help(spec)` | the one-line usage / the full help text |
+| `facet_version_text(spec)` | `name version` (`""` without `version`) |
+
+Handlers are closures or function references stored in a map:
+`{ add: |args| => do_add(args) }` or `{ main: run }`. (Call them through
+`facet_run`/`facet_dispatch`: `handlers.add(args)` directly hits crush-ast
+#362.)
 
 Result map keys come from `long` (`--build-dir` ⇒ `build_dir`) unless the
 entry sets `name`. Declared-but-unset options/positionals are present as
@@ -60,11 +87,13 @@ from argv (used by env fallback; handy for scripts).
 ## Spec entries
 
 ```
+spec:        { name, usage?, version?, about?, epilog?,
+               flags?, options?, positionals?, subcommands? }
 flags:       { short?, long?, name?, default?, required?, help? }        // boolean
 options:     { short?, long?, name?, type?, default?, required?,        // type: str|int|float|bool
                choices?, env?, help? }
 positionals: { name, type?, default?, required?, repeat?, help? }
-subcommands: { name, usage?, help?, flags?, options?, positionals? }
+subcommands: { name, usage?, help?, about?, epilog?, flags?, options?, positionals? }
 ```
 
 Semantics: `--` ends option parsing; `-abc` bundles boolean shorts;

@@ -1,0 +1,29 @@
+// demo/todo.crush — a multi-command CLI in one facet_run call.
+//
+//   todo add <text> [--priority N]
+//   todo list [--all]
+//   todo --version | --help | <subcommand> --help
+//
+// Run locally:  cat ../facet.crush todo.crush > /tmp/todo.crush
+//               crush-run run /tmp/todo.crush -- add "buy milk" -p 2
+
+fn cmd_add(spec, args) {
+    if len(args.text) == 0 { facet_fail(spec, "add: the text is empty") }
+    io.print("added (priority " + conv.to_str(args.priority) + "): " + args.text)
+    return 0
+}
+
+fn cmd_list(args) {
+    if args.all == true { io.print("[x] buy milk") }
+    io.print("[ ] write facet docs")
+    return 0
+}
+
+fn main() {
+    // Map literals must stay on one line until crush-ast CRUSH-345 lands, so
+    // build the spec from named pieces.
+    let add = { name: "add", help: "add an item", options: [ { short: "-p", long: "--priority", type: "int", default: 1, choices: [1, 2, 3], help: "1 = low, 3 = urgent" } ], positionals: [ { name: "text", required: true, help: "what to do" } ] }
+    let list = { name: "list", help: "show items", flags: [ { short: "-a", long: "--all", help: "include done items" } ] }
+    let spec = { name: "todo", version: "0.2.0", about: "A tiny todo list, to show facet_run.", epilog: "Exit status: 0 ok, 2 bad arguments.", subcommands: [add, list] }
+    facet_run(spec, { add: |args| => cmd_add(spec, args), list: |args| => cmd_list(args) })
+}
