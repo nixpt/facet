@@ -17,13 +17,29 @@ positional collection, typed defaults and column-aligned help — all from
 the spec. Runnable examples in [`demo/`](demo/).
 
 > **Crush has no source-level imports yet** (`module.load` is unimplemented
-> upstream). Consume facet by **concatenating** it with your program — that is
-> also how crush-pkg ships path dependencies:
+> upstream). Consume facet either way:
 >
+> **1. Concatenate** (one-off scripts):
 > ```sh
 > cat facet.crush my_program.crush > /tmp/my_program.crush
 > crush-run run /tmp/my_program.crush -- --help
 > ```
+>
+> **2. crush-pkg path dependency** (projects — see
+> [`examples/consumer/`](examples/consumer)):
+> ```toml
+> [[dependencies]]
+> name = "facet"
+> path = "../facet"
+> ```
+> ```sh
+> crush-pkg build
+> crush-run run target/<name>.cvm -- --help
+> ```
+> Known upstream limits (crush-ast CRUSH-348/349, 2026-10-31): `crush-pkg run`
+> does not see path deps, and crush-pkg turns `sys.exit(n)` into an E-RUN
+> failure while dropping pre-exit output — run the built `.cvm` with
+> `crush-run` until those land.
 >
 > Functions are global by design; everything internal is `__facet_`-prefixed.
 

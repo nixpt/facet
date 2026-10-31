@@ -1,0 +1,25 @@
+// facet-consumer — facet as a crush-pkg path dependency (no concatenation).
+//
+//   cd examples/consumer
+//   crush-pkg build                     # resolves [[dependencies]] facet -> ../..
+//   crush-run run target/facet-consumer.cvm -- --help
+//   crush-run run target/facet-consumer.cvm -- -r 2 hi there
+//
+// KNOWN upstream bugs (crush-ast CRUSH-348/349, 2026-10-31):
+//   * `crush-pkg run` recompiles the entry alone -> "Undefined function:
+//     facet_parse". Use `crush-pkg build` + `crush-run run target/*.cvm`.
+//   * `crush-pkg` (bare flow) turns sys.exit(n) into an E-RUN failure and
+//     drops output printed before it, so --help/bad-arg paths only work via
+//     crush-run directly until 349 lands.
+fn main() {
+    let spec = { name: "facet-consumer", usage: "facet-consumer [options] [words...]", flags: [ { short: "-v", long: "--verbose", help: "more output" } ], options: [ { long: "--repeat", short: "-r", type: "int", default: 1, choices: [1, 2, 3], help: "repeat count" } ], positionals: [ { name: "words", repeat: true } ] }
+    let args = facet_parse(spec)
+    let line = "hello from the consumer"
+    if len(args.words) > 0 { line = str.join(args.words, " ") }
+    let i = 0
+    while i < args.repeat {
+        io.print(line)
+        i = i + 1
+    }
+    if args.verbose == true { io.print("(repeat=" + conv.to_str(args.repeat) + ")") }
+}

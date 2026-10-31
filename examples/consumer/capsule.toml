@@ -1,0 +1,14 @@
+[capsule]
+name = "facet-consumer"
+version = "0.1.0"
+description = "consumer of facet via a crush-pkg path dependency"
+entry = "main.crush"
+language = "crush"
+category = "cli"
+
+[capabilities]
+required = ["io.print", "sys.args", "sys.exit"]
+
+[[dependencies]]
+name = "facet"
+path = "../.."
