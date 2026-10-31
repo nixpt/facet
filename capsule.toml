@@ -2,7 +2,7 @@
 name = "facet"
 version = "0.1.0"
 description = "CLI argument parser and help renderer for Crush programs, written in Crush"
-entry = "main.crush"
+entry = "facet.crush"
 language = "crush"
 category = "library"
 platforms = ["linux", "macos", "windows"]
