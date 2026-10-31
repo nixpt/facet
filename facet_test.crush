@@ -1,0 +1,184 @@
+// facet_test.crush — self-verifying test program for facet.
+//
+// Runs entirely through facet_parse_debug() with synthetic argv arrays (no
+// process spawning), then checks the rendered help text. Prints "ok …" /
+// "FAIL …" per case and exits non-zero if anything failed.
+//
+// Run: crush-run run facet_test.crush
+
+/// 1 when the check failed, 0 when it passed — callers accumulate.
+fn check(name, cond) {
+    if cond {
+        print("ok " + name)
+        return 0
+    }
+    print("FAIL " + name)
+    return 1
+}
+
+fn err_is(r) {
+    if r.ok { return "<no error>" }
+    return r.error
+}
+
+fn contains(haystack, needle) {
+    return __facet_find(haystack, needle) >= 0
+}
+
+/// data[key] with a fallback so a failed parse reports FAIL instead of
+/// crashing on r.data == null (and unset keys report the fallback).
+fn field(r, key, fallback) {
+    if r.ok == false { return fallback }
+    let v = r.data[key]
+    if v == null { return fallback }
+    return v
+}
+
+fn main() {
+    let fails = 0
+    let spec = { name: "greet", flags: [ { short: "-v", long: "--verbose", help: "chatty" } ], options: [ { long: "--level", short: "-l", type: "int", default: 1, choices: [1, 2], help: "verbosity" }, { long: "--name", type: "str", required: true, help: "who" } ], positionals: [ { name: "files", repeat: true, help: "extra files" } ] }
+
+    let a = facet_parse_debug(spec, [])
+    fails = fails + check("missing required option", a.ok == false)
+    fails = fails + check("missing required option names it", contains(err_is(a), "missing required option '--name'"))
+
+    let b = facet_parse_debug(spec, ["--name", "ada"])
+    fails = fails + check("defaults", b.ok == true)
+    fails = fails + check("default level", field(b, "level", "<unset>") == 1)
+    fails = fails + check("flag unset -> false", field(b, "verbose", "<unset>") == false)
+    fails = fails + check("repeat default []", len(field(b, "files", "<unset>")) == 0)
+    fails = fails + check("value", field(b, "name", "<unset>") == "ada")
+    fails = fails + check("_provided tracks argv", __facet_in(field(b, "_provided", []), "name") == true)
+    fails = fails + check("_provided excludes defaults", __facet_in(field(b, "_provided", []), "level") == false)
+
+    let c = facet_parse_debug(spec, ["-v", "--name=ada", "-l2"])
+    fails = fails + check("flags + --opt=value + attached short", c.ok == true)
+    fails = fails + check("verbose set", field(c, "verbose", "<unset>") == true)
+    fails = fails + check("-l2 -> 2", field(c, "level", "<unset>") == 2)
+
+    let d = facet_parse_debug(spec, ["-l", "2", "--name", "ada", "--", "-v", "x"])
+    fails = fails + check("-- ends options", d.ok == true)
+    fails = fails + check("value before --", field(d, "level", "<unset>") == 2)
+    fails = fails + check("-v after -- is positional", field(d, "verbose", "<unset>") == false)
+    fails = fails + check("post -- positionals", len(field(d, "files", "<unset>")) == 2)
+
+    let e = facet_parse_debug(spec, ["--name", "ada", "a.txt", "b.txt"])
+    fails = fails + check("positionals collect", e.ok == true)
+    fails = fails + check("positional count", len(field(e, "files", "<unset>")) == 2)
+
+    let f = facet_parse_debug(spec, ["-vl2", "--name", "ada"])
+    fails = fails + check("short bundle with attached value", f.ok == true)
+    fails = fails + check("bundle flag", field(f, "verbose", "<unset>") == true)
+    fails = fails + check("bundle value", field(f, "level", "<unset>") == 2)
+
+    let g = facet_parse_debug(spec, ["--level", "3", "--name", "ada"])
+    fails = fails + check("choices reject", g.ok == false)
+    fails = fails + check("choices message", contains(err_is(g), "is not one of 1, 2"))
+
+    let h = facet_parse_debug(spec, ["--name"])
+    fails = fails + check("missing option value", h.ok == false)
+    fails = fails + check("missing value message", contains(err_is(h), "needs a value"))
+
+    let i = facet_parse_debug(spec, ["--bogus", "--name", "ada"])
+    fails = fails + check("unknown long option", i.ok == false)
+    fails = fails + check("unknown long message", contains(err_is(i), "unrecognized option '--bogus'"))
+
+    let j = facet_parse_debug(spec, ["-z", "--name", "ada"])
+    fails = fails + check("unknown short option", j.ok == false)
+    fails = fails + check("unknown short message", contains(err_is(j), "unrecognized option '-z'"))
+
+    let k = facet_parse_debug(spec, ["--level", "abc", "--name", "ada"])
+    fails = fails + check("int coercion rejects", k.ok == false)
+    fails = fails + check("int message", contains(err_is(k), "expected int, got 'abc'"))
+
+    let l = facet_parse_debug(spec, ["--verbose=1", "--name", "ada"])
+    fails = fails + check("flag refuses value", l.ok == false)
+    fails = fails + check("flag value message", contains(err_is(l), "does not take a value"))
+
+    let m = facet_parse_debug(spec, ["--name", "日本語🎉"])
+    fails = fails + check("unicode survives", m.ok == true)
+    fails = fails + check("unicode value intact", field(m, "name", "<unset>") == "日本語🎉")
+
+    // bool + float options, key derived from the long name
+    let spec2 = { name: "build", options: [ { long: "--build-dir", type: "str", default: "out" }, { long: "--ratio", type: "float", default: 1.5 }, { long: "--color", type: "bool", default: true } ], positionals: [ { name: "target", required: true } ] }
+    let n = facet_parse_debug(spec2, ["app"])
+    fails = fails + check("long-derived key + defaults", n.ok == true)
+    fails = fails + check("build_dir default", field(n, "build_dir", "<unset>") == "out")
+    fails = fails + check("ratio default", field(n, "ratio", "<unset>") == 1.5)
+    fails = fails + check("bool default", field(n, "color", "<unset>") == true)
+    fails = fails + check("positional value", field(n, "target", "<unset>") == "app")
+
+    let o = facet_parse_debug(spec2, ["--build-dir=dist", "--ratio", "2.5", "--color", "false", "app"])
+    fails = fails + check("str/float/bool coercion", o.ok == true)
+    fails = fails + check("build_dir override", field(o, "build_dir", "<unset>") == "dist")
+    fails = fails + check("ratio override", field(o, "ratio", "<unset>") == 2.5)
+    fails = fails + check("bool override", field(o, "color", "<unset>") == false)
+
+    let p = facet_parse_debug(spec2, [])
+    fails = fails + check("missing positional", p.ok == false)
+    fails = fails + check("missing positional message", contains(err_is(p), "missing required argument 'target'"))
+
+    let spec3 = { name: "one", positionals: [ { name: "only" } ] }
+    let q = facet_parse_debug(spec3, ["x", "y"])
+    fails = fails + check("unexpected argument", q.ok == false)
+    fails = fails + check("unexpected message", contains(err_is(q), "unexpected argument 'y'"))
+
+    let spec4 = { name: "bundle", flags: [ { short: "-a" }, { short: "-b" }, { short: "-c" } ] }
+    let r = facet_parse_debug(spec4, ["-abc"])
+    fails = fails + check("three-flag bundle", r.ok == true)
+    fails = fails + check("bundle a", field(r, "a", "<unset>") == true)
+    fails = fails + check("bundle b", field(r, "b", "<unset>") == true)
+    fails = fails + check("bundle c", field(r, "c", "<unset>") == true)
+
+    let spec5 = { name: "req", flags: [ { long: "--force", required: true } ] }
+    let s = facet_parse_debug(spec5, [])
+    fails = fails + check("required flag", s.ok == false)
+    fails = fails + check("required flag message", contains(err_is(s), "missing required flag '--force'"))
+
+    // subcommands
+    let git = { name: "git", subcommands: [ { name: "add", flags: [ { short: "-f", long: "--force", help: "overwrite" } ], positionals: [ { name: "path", required: true } ] }, { name: "status", flags: [ { short: "-s", long: "--short" } ], help: "show status" } ] }
+    let t = facet_parse_debug(git, ["add", "-f", "x.crush"])
+    fails = fails + check("subcommand dispatch", t.ok == true)
+    fails = fails + check("subcommand name", field(t, "subcommand", "<unset>") == "add")
+    fails = fails + check("subcommand flag", field(t, "force", "<unset>") == true)
+    fails = fails + check("subcommand positional", field(t, "path", "<unset>") == "x.crush")
+
+    let u = facet_parse_debug(git, ["status", "-s"])
+    fails = fails + check("second subcommand", u.ok == true)
+    fails = fails + check("second subcommand name", field(u, "subcommand", "<unset>") == "status")
+    fails = fails + check("second subcommand flag", field(u, "short", "<unset>") == true)
+
+    let v = facet_parse_debug(git, ["nope"])
+    fails = fails + check("unknown subcommand", v.ok == false)
+    fails = fails + check("unknown subcommand message", contains(err_is(v), "unknown subcommand 'nope'"))
+
+    let w = facet_parse_debug(git, [])
+    fails = fails + check("subcommand required", w.ok == false)
+    fails = fails + check("subcommand required message", contains(err_is(w), "expected a subcommand"))
+
+    let x = facet_parse_debug(git, ["add"])
+    fails = fails + check("subcommand missing positional", x.ok == false)
+    fails = fails + check("subcommand missing positional message", contains(err_is(x), "missing required argument 'path'"))
+
+    // rendered text
+    let help = facet_help(spec)
+    fails = fails + check("help has usage", contains(help, "Usage: greet"))
+    fails = fails + check("help lists long", contains(help, "--verbose"))
+    fails = fails + check("help badges type", contains(help, "--level INT"))
+    fails = fails + check("help notes choices", contains(help, "choices: 1, 2"))
+    fails = fails + check("help notes required", contains(help, "required"))
+    fails = fails + check("help lists repeat positional", contains(help, "files..."))
+
+    let git_help = facet_help(git)
+    fails = fails + check("help lists subcommands", contains(git_help, "Subcommands:"))
+    fails = fails + check("help subcommand note", contains(git_help, "show status"))
+
+    fails = fails + check("usage synth option", contains(facet_usage(spec), "[--name STR]"))
+    fails = fails + check("usage synth subcommand", contains(facet_usage(git), "<subcommand>"))
+
+    if fails > 0 {
+        print("FAILED: " + conv.to_str(fails) + " check(s)")
+        sys.exit(1)
+    }
+    print("all facet checks passed")
+}

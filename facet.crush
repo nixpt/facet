@@ -1,0 +1,587 @@
+// facet — CLI argument parser and help renderer for Crush programs.
+//
+// One declarative spec map drives parsing, defaults, usage and --help:
+//
+//   let spec = {
+//       name: "greet",
+//       usage: "greet [options] [names...]",
+//       flags:     [ { short: "-v", long: "--verbose", help: "chatty" } ],
+//       options:   [ { long: "--level", short: "-l", type: "int", default: 1,
+//                      choices: [1, 2], help: "verbosity" } ],
+//       positionals: [ { name: "names", repeat: true } ]
+//   }
+//   let args = facet_parse(spec)     // bad input => error + usage + exit(2)
+//
+// Engine envelope: stdlib capabilities only — this file is deliberately free
+// of `try/catch` and `env.get`, which the AOT backends cannot compile even in
+// unused functions (see docs/plans/2026-10-31-facet-design.md). Env-var
+// fallback lives in the opt-in companion package `facet-env`.
+//
+// Public surface:
+//   facet_parse(spec)              -> args map (prints/exit(2) on error)
+//   facet_parse_debug(spec, argv)  -> { ok, data, error }  (no output, no exit)
+//   facet_usage(spec)              -> one-line "Usage: ..." string
+//   facet_help(spec)               -> full help text (usage + sections)
+
+// ── small string/array utilities (kept unicode-safe: s[a:b] cuts scalars) ──
+
+/// `x` as an array: arrays pass through, anything else (null included) -> [].
+fn __facet_list(x) {
+    if x == null { return [] }
+    return x
+}
+
+fn __facet_has_arr(x) {
+    let l = __facet_list(x)
+    if len(l) > 0 { return true }
+    return false
+}
+
+fn __facet_starts_with(s, prefix) {
+    if len(prefix) > len(s) { return false }
+    return s[0:len(prefix)] == prefix
+}
+
+/// First index of `needle` in `s`, or -1.
+fn __facet_find(s, needle) {
+    let n = len(needle)
+    if n == 0 { return 0 }
+    let i = 0
+    while i + n <= len(s) {
+        if s[i:i + n] == needle { return i }
+        i = i + 1
+    }
+    return -1
+}
+
+/// Join values as text with ", " (used only for messages/help).
+fn __facet_list_text(arr) {
+    let out = ""
+    let first = true
+    for v in __facet_list(arr) {
+        if first { first = false } else { out = out + ", " }
+        out = out + conv.to_str(v)
+    }
+    return out
+}
+
+fn __facet_pad(n) {
+    let out = ""
+    let i = 0
+    while i < n {
+        out = out + " "
+        i = i + 1
+    }
+    return out
+}
+
+// ── spec entry helpers ─────────────────────────────────────────────────────
+
+/// Result key for a flag/option entry: explicit `name`, else the long form
+/// without dashes (`--build-dir` -> `build_dir`), else the short letter.
+fn facet_key(entry) {
+    if entry.name != null { return entry.name }
+    if entry.long != null {
+        return str.replace(entry.long[2:], "-", "_")
+    }
+    if entry.short != null { return entry.short[1:2] }
+    return "arg"
+}
+
+fn __facet_badge(entry) {
+    let t = entry.type
+    if t == "int" { return "INT" }
+    if t == "float" { return "FLOAT" }
+    if t == "bool" { return "BOOL" }
+    return "STR"
+}
+
+fn __facet_forms(entry) {
+    let short = entry.short
+    let long = entry.long
+    if short != null && long != null { return short + ", " + long }
+    if long != null { return long }
+    if short != null { return short }
+    return "<unnamed>"
+}
+
+fn __facet_opt_label(entry) {
+    if entry.long != null { return entry.long }
+    if entry.short != null { return entry.short }
+    return facet_key(entry)
+}
+
+/// Lookup helpers return a 0- or 1-element array instead of a nullable
+/// value: Crush's checker types a `return null`-capable function as
+/// `optional<any>` and then rejects `x != null` on the result, so arrays are
+/// the portable "maybe" (same reason `.ok` result maps are used below).
+
+fn __facet_find_long(entries, name) {
+    for e in __facet_list(entries) {
+        if e.long != null && len(e.long) > 2 && e.long[2:] == name { return [e] }
+    }
+    return []
+}
+
+fn __facet_find_short(entries, short) {
+    for e in __facet_list(entries) {
+        if e.short != null && e.short == short { return [e] }
+    }
+    return []
+}
+
+fn __facet_in(choices, value) {
+    for c in __facet_list(choices) {
+        if c == value { return true }
+    }
+    return false
+}
+
+// ── coercion ───────────────────────────────────────────────────────────────
+
+/// Coerce `raw` (string) per the entry's `type`. Returns
+/// { ok: bool, value: any, error: text|null }; `what` describes the source
+/// for the error message (e.g. "option '--level'").
+fn __facet_coerce(entry, raw, what) {
+    let t = entry.type
+    if t == "int" {
+        let n = conv.parse_int(raw, 10)
+        if n == null {
+            return { ok: false, value: null, error: what + ": expected int, got '" + raw + "'" }
+        }
+        return { ok: true, value: n, error: null }
+    }
+    if t == "float" {
+        let f = conv.to_float(raw)
+        if f == null {
+            return { ok: false, value: null, error: what + ": expected float, got '" + raw + "'" }
+        }
+        return { ok: true, value: f, error: null }
+    }
+    if t == "bool" {
+        if raw == "true" { return { ok: true, value: true, error: null } }
+        if raw == "false" { return { ok: true, value: false, error: null } }
+        return { ok: false, value: null, error: what + ": expected bool (true|false), got '" + raw + "'" }
+    }
+    return { ok: true, value: raw, error: null }
+}
+
+/// Coercion entry point for the env companion: `{ ok, value, error }` —
+/// the same result map `__facet_coerce` returns, exposed for `facet-env`.
+fn facet_coerce_value(entry, raw) {
+    return __facet_coerce(entry, raw, facet_key(entry))
+}
+
+// ── usage / help rendering ─────────────────────────────────────────────────
+
+fn __facet_usage_flags(flags) {
+    let out = ""
+    for f in __facet_list(flags) {
+        out = out + " [" + __facet_forms(f) + "]"
+    }
+    return out
+}
+
+fn __facet_usage_options(options) {
+    let out = ""
+    for o in __facet_list(options) {
+        out = out + " [" + __facet_forms(o) + " " + __facet_badge(o) + "]"
+    }
+    return out
+}
+
+fn __facet_usage_positionals(positionals) {
+    let out = ""
+    for p in __facet_list(positionals) {
+        out = out + " "
+        if p.repeat == true { out = out + "[" + p.name + "...]" } else { out = out + p.name }
+    }
+    return out
+}
+
+/// "Usage: ..." line. Uses `spec.usage` verbatim when present, else builds it
+/// from the declared entries.
+fn facet_usage(spec) {
+    if spec.usage != null { return "Usage: " + spec.usage }
+    let s = "Usage: " + spec.name
+    s = s + __facet_usage_flags(spec.flags)
+    s = s + __facet_usage_options(spec.options)
+    s = s + __facet_usage_positionals(spec.positionals)
+    if __facet_has_arr(spec.subcommands) { s = s + " <subcommand>" }
+    return s
+}
+
+fn __facet_note_option(o) {
+    let notes = ""
+    if o.default != null { notes = notes + "default: " + conv.to_str(o.default) }
+    if __facet_has_arr(o.choices) {
+        if notes != "" { notes = notes + "; " }
+        notes = notes + "choices: " + __facet_list_text(o.choices)
+    }
+    if o.env != null {
+        if notes != "" { notes = notes + "; " }
+        notes = notes + "env: " + o.env
+    }
+    if o.required == true {
+        if notes != "" { notes = notes + "; " }
+        notes = notes + "required"
+    }
+    if notes == "" { return "" }
+    return " (" + notes + ")"
+}
+
+fn __facet_row(left, note) {
+    return left + note
+}
+
+fn __facet_render_section(title, rows, width) {
+    let out = title + "\n"
+    for r in rows {
+        if r.note == "" {
+            out = out + "  " + r.left + "\n"
+        } else {
+            out = out + "  " + r.left + __facet_pad(width - len(r.left) + 2) + r.note + "\n"
+        }
+    }
+    return out
+}
+
+/// Full help text: usage line, then Options / Positionals / Subcommands.
+fn facet_help(spec) {
+    let flags = __facet_list(spec.flags)
+    let options = __facet_list(spec.options)
+    let positionals = __facet_list(spec.positionals)
+    let subs = __facet_list(spec.subcommands)
+
+    let opt_rows = []
+    let width = 0
+    for f in flags {
+        let left = __facet_forms(f)
+        if len(left) > width { width = len(left) }
+        array.push(opt_rows, { left: left, note: f.help + __facet_flag_note(f) })
+    }
+    for o in options {
+        let left = __facet_forms(o) + " " + __facet_badge(o)
+        if len(left) > width { width = len(left) }
+        array.push(opt_rows, { left: left, note: o.help + __facet_note_option(o) })
+    }
+    let pos_rows = []
+    for p in positionals {
+        let left = p.name
+        if p.repeat == true { left = left + "..." }
+        if len(left) > width { width = len(left) }
+        array.push(pos_rows, { left: left, note: __facet_pos_note(p) })
+    }
+    let sub_rows = []
+    for s in subs {
+        if len(s.name) > width { width = len(s.name) }
+        array.push(sub_rows, { left: s.name, note: __facet_sub_note(s) })
+    }
+
+    let out = facet_usage(spec) + "\n\n"
+    if len(opt_rows) > 0 {
+        out = out + __facet_render_section("Options:", opt_rows, width) + "\n"
+    }
+    if len(pos_rows) > 0 {
+        out = out + __facet_render_section("Positionals:", pos_rows, width) + "\n"
+    }
+    if len(sub_rows) > 0 {
+        out = out + __facet_render_section("Subcommands:", sub_rows, width)
+    }
+    // Trim the final newline; callers print the text as-is.
+    if len(out) > 0 && out[len(out) - 1:len(out)] == "\n" {
+        return out[0:len(out) - 1]
+    }
+    return out
+}
+
+fn __facet_flag_note(f) {
+    if f.required == true { return " (required)" }
+    return ""
+}
+
+fn __facet_pos_note(p) {
+    let notes = ""
+    if p.default != null { notes = notes + "default: " + conv.to_str(p.default) }
+    if p.required == true {
+        if notes != "" { notes = notes + "; " }
+        notes = notes + "required"
+    }
+    if notes == "" { return "" }
+    return " (" + notes + ")"
+}
+
+fn __facet_sub_note(s) {
+    if s.help != null { return s.help }
+    return ""
+}
+
+// ── parsing ────────────────────────────────────────────────────────────────
+
+/// Build the effective spec for a matched subcommand: same program name, the
+/// subcommand's own entries; `usage` is synthesized from the parent name when
+/// the subcommand didn't declare one.
+fn __facet_sub_spec(parent, sub) {
+    let usage = sub.usage
+    if usage == null {
+        usage = parent.name + " " + sub.name
+        usage = usage + __facet_usage_flags(sub.flags)
+        usage = usage + __facet_usage_options(sub.options)
+        usage = usage + __facet_usage_positionals(sub.positionals)
+    }
+    return { name: parent.name, usage: usage, flags: sub.flags, options: sub.options, positionals: sub.positionals }
+}
+
+/// Parse an already-given argv (no sys.args, no output, no exit).
+/// Returns { ok: bool, data: map|null, error: text|null }.
+fn facet_parse_debug(spec, argv) {
+    let subs = __facet_list(spec.subcommands)
+    if len(subs) > 0 {
+        if len(argv) == 0 {
+            return { ok: false, data: null, error: "expected a subcommand (" + __facet_sub_names(subs) + ")" }
+        }
+        let name = argv[0]
+        let found = null
+        for s in subs {
+            if s.name == name { found = s }
+        }
+        if found == null {
+            return { ok: false, data: null, error: "unknown subcommand '" + name + "' (" + __facet_sub_names(subs) + ")" }
+        }
+        let rest = []
+        let i = 1
+        while i < len(argv) {
+            array.push(rest, argv[i])
+            i = i + 1
+        }
+        let r = __facet_parse_flat(__facet_sub_spec(spec, found), rest)
+        if r.ok == false { return r }
+        r.data.subcommand = name
+        return r
+    }
+    return __facet_parse_flat(spec, argv)
+}
+
+fn __facet_sub_names(subs) {
+    let out = ""
+    let first = true
+    for s in subs {
+        if first { first = false } else { out = out + ", " }
+        out = out + s.name
+    }
+    return out
+}
+
+fn __facet_parse_flat(spec, argv) {
+    let flags = __facet_list(spec.flags)
+    let options = __facet_list(spec.options)
+    let positionals = __facet_list(spec.positionals)
+    let data = {}
+
+    // Defaults: every declared key exists in the result (null when unset), so
+    // dynamic `data[key]` reads below never touch an absent map key — Crush's
+    // subscript errors on absent keys even though field access returns null.
+    for f in flags {
+        let k = facet_key(f)
+        if f.default != null { data[k] = f.default } else { data[k] = false }
+    }
+    for o in options {
+        data[facet_key(o)] = null
+        if o.default != null { data[facet_key(o)] = o.default }
+    }
+    for p in positionals {
+        data[p.name] = null
+        if p.repeat == true {
+            if p.default != null { data[p.name] = p.default } else { data[p.name] = [] }
+        } else if p.default != null {
+            data[p.name] = p.default
+        }
+    }
+
+    let provided = []
+    let pos_vals = []
+    let i = 0
+    let literal = false
+    while i < len(argv) {
+        let tok = argv[i]
+        if literal {
+            array.push(pos_vals, tok)
+        } else if tok == "--" {
+            literal = true
+        } else if __facet_starts_with(tok, "--") && len(tok) > 2 {
+            let body = tok[2:]
+            let eq = __facet_find(body, "=")
+            let name = body
+            let has_val = false
+            let val = null
+            if eq >= 0 {
+                name = body[0:eq]
+                val = body[eq + 1:]
+                has_val = true
+            }
+            let hits = __facet_find_long(options, name)
+            if len(hits) > 0 {
+                let opt = hits[0]
+                let k = facet_key(opt)
+                if has_val {
+                    let c = __facet_coerce(opt, val, "option '--" + name + "'")
+                    if c.ok == false { return { ok: false, data: null, error: c.error } }
+                    data[k] = c.value
+                    array.push(provided, k)
+                } else {
+                    if i + 1 >= len(argv) {
+                        return { ok: false, data: null, error: "option '--" + name + "' needs a value" }
+                    }
+                    i = i + 1
+                    let c = __facet_coerce(opt, argv[i], "option '--" + name + "'")
+                    if c.ok == false { return { ok: false, data: null, error: c.error } }
+                    data[k] = c.value
+                    array.push(provided, k)
+                }
+            } else {
+                let fhits = __facet_find_long(flags, name)
+                if len(fhits) == 0 {
+                    return { ok: false, data: null, error: "unrecognized option '--" + name + "'" }
+                }
+                if has_val {
+                    return { ok: false, data: null, error: "flag '--" + name + "' does not take a value" }
+                }
+                let fk = facet_key(fhits[0])
+                data[fk] = true
+                array.push(provided, fk)
+            }
+        } else if __facet_starts_with(tok, "-") && len(tok) > 1 {
+            // Short cluster: -abc are three booleans; -lv5 / -l 5 attach values.
+            let j = 1
+            while j < len(tok) {
+                let short = "-" + tok[j]
+                let fhits = __facet_find_short(flags, short)
+                if len(fhits) > 0 {
+                    let fk = facet_key(fhits[0])
+                    data[fk] = true
+                    array.push(provided, fk)
+                    j = j + 1
+                } else {
+                    let ohits = __facet_find_short(options, short)
+                    if len(ohits) == 0 {
+                        return { ok: false, data: null, error: "unrecognized option '" + short + "'" }
+                    }
+                    let opt = ohits[0]
+                    let k = facet_key(opt)
+                    if j + 1 < len(tok) {
+                        let c = __facet_coerce(opt, tok[j + 1:], "option '" + short + "'")
+                        if c.ok == false { return { ok: false, data: null, error: c.error } }
+                        data[k] = c.value
+                        array.push(provided, k)
+                        j = len(tok)
+                    } else {
+                        if i + 1 >= len(argv) {
+                            return { ok: false, data: null, error: "option '" + short + "' needs a value" }
+                        }
+                        i = i + 1
+                        let c = __facet_coerce(opt, argv[i], "option '" + short + "'")
+                        if c.ok == false { return { ok: false, data: null, error: c.error } }
+                        data[k] = c.value
+                        array.push(provided, k)
+                        j = len(tok)
+                    }
+                }
+            }
+        } else {
+            array.push(pos_vals, tok)
+        }
+        i = i + 1
+    }
+
+    // Positionals in declared order; a repeat positional absorbs the rest.
+    let k = 0
+    for p in positionals {
+        if p.repeat == true {
+            let vals = []
+            while k < len(pos_vals) {
+                let c = __facet_coerce(p, pos_vals[k], "argument '" + p.name + "'")
+                if c.ok == false { return { ok: false, data: null, error: c.error } }
+                array.push(vals, c.value)
+                k = k + 1
+            }
+            if len(vals) > 0 {
+                data[p.name] = vals
+                array.push(provided, p.name)
+            }
+        } else if k < len(pos_vals) {
+            let c = __facet_coerce(p, pos_vals[k], "argument '" + p.name + "'")
+            if c.ok == false { return { ok: false, data: null, error: c.error } }
+            data[p.name] = c.value
+            array.push(provided, p.name)
+            k = k + 1
+        } else if p.required == true {
+            return { ok: false, data: null, error: "missing required argument '" + p.name + "'" }
+        }
+    }
+    if k < len(pos_vals) {
+        return { ok: false, data: null, error: "unexpected argument '" + pos_vals[k] + "'" }
+    }
+
+    // Required options/flags + choices on whatever ended up set.
+    for o in options {
+        let v = data[facet_key(o)]
+        if v == null && o.required == true {
+            return { ok: false, data: null, error: "missing required option '" + __facet_opt_label(o) + "'" }
+        }
+        if v != null && __facet_has_arr(o.choices) && __facet_in(o.choices, v) == false {
+            return { ok: false, data: null, error: __facet_opt_label(o) + ": '" + conv.to_str(v) + "' is not one of " + __facet_list_text(o.choices) }
+        }
+    }
+    for f in flags {
+        if f.required == true && data[facet_key(f)] != true {
+            return { ok: false, data: null, error: "missing required flag '" + __facet_opt_label(f) + "'" }
+        }
+    }
+    data["_provided"] = provided
+    return { ok: true, data: data, error: null }
+}
+
+// ── --help handling ────────────────────────────────────────────────────────
+
+fn __facet_claims_help(spec) {
+    for f in __facet_list(spec.flags) {
+        if f.long == "--help" || f.short == "-h" { return true }
+    }
+    for o in __facet_list(spec.options) {
+        if o.long == "--help" || o.short == "-h" { return true }
+    }
+    return false
+}
+
+fn __facet_wants_help(spec, argv) {
+    if __facet_claims_help(spec) { return false }
+    let i = 0
+    while i < len(argv) {
+        let tok = argv[i]
+        if tok == "--" { return false }
+        if tok == "-h" || tok == "--help" { return true }
+        i = i + 1
+    }
+    return false
+}
+
+// ── public entry point ─────────────────────────────────────────────────────
+
+/// Parse `sys.args()` against `spec`. On any problem: print
+/// `facet: <name>: <error>`, the usage line, a --help hint, then exit(2).
+/// `-h`/`--help` (unless the spec claims them) prints full help and exit(0).
+fn facet_parse(spec) {
+    let argv = sys.args()
+    if __facet_wants_help(spec, argv) {
+        io.print(facet_help(spec))
+        sys.exit(0)
+    }
+    let r = facet_parse_debug(spec, argv)
+    if r.ok == false {
+        io.print("facet: " + spec.name + ": " + r.error)
+        io.print(facet_usage(spec))
+        io.print("run with --help for the full option list")
+        sys.exit(2)
+    }
+    return r.data
+}

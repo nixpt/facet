@@ -1,0 +1,16 @@
+// demo/env_greet.crush — env fallback via the facet-env companion.
+//
+// Concatenate facet.crush AND facet_env.crush, then run with the env
+// capability granted:
+//   cat ../facet.crush ../facet_env.crush env_greet.crush > /tmp/env_greet.crush
+//   crush-run run /tmp/env_greet.crush -- --name Ada --env
+// With GREET_LEVEL=3 the --level option's env fallback applies when argv
+// leaves it unset. (Without --env the whole-program capability gate refuses
+// the run before main — facet_env references env.get by design.)
+
+fn main() {
+    let spec = { name: "env-greet", options: [ { long: "--level", short: "-l", type: "int", default: 1, env: "GREET_LEVEL", help: "verbosity (env: GREET_LEVEL)" }, { long: "--name", type: "str", required: true } ] }
+    let args = facet_parse(spec)
+    facet_env_apply(spec, args)
+    io.print("level=" + conv.to_str(args.level) + " name=" + args.name)
+}

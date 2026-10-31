@@ -1,0 +1,39 @@
+// facet_env.crush — opt-in env-var fallback companion for facet.
+//
+// Kept out of facet.crush on purpose: the AOT backends cannot compile
+// `env.get` or `try/catch` (even in unused functions, see the design doc), so
+// pulling this into the core would make every facet program AOT-uncompilable.
+// A program that concatenates this file must run with the env capability
+// (`crush-run run … --env`); programs that never call facet_env_apply are not
+// gated by the whole-program grant check (it is reachability-aware).
+//
+// Usage (after facet_parse):
+//   let args = facet_parse(spec)
+//   facet_env_apply(spec, args)
+// An option declaring `env: "GREET_LEVEL"` is filled from the environment when
+// argv left it null. Bad env text is ignored (the CLI default/required rules
+// already ran), so a malformed env var can never crash a program.
+
+fn facet_env_apply(spec, args) {
+    // Argv always wins; env only fills options the user did not pass.
+    // `_provided` records exactly the keys that came from argv.
+    let given = []
+    if args["_provided"] != null { given = args["_provided"] }
+    for o in __facet_list(spec.options) {
+        if o.env != null {
+            let k = facet_key(o)
+            if __facet_in(given, k) == false {
+                try {
+                    let raw = env.get(o.env)
+                    if raw != null && raw != "" {
+                        let r = facet_coerce_value(o, raw)
+                        if r.ok { args[k] = r.value }
+                    }
+                } catch e {
+                    // No `--env` grant: silently skip the fallback.
+                }
+            }
+        }
+    }
+    return args
+}
