@@ -258,6 +258,12 @@ fn main() {
     let bad4 = facet_check_spec({ name: "b", flags: [ { long: "--n", count: true, default: 2 } ] })
     fails = fails + check("count with default rejected", contains(__facet_list_text(bad4), "count flag cannot have type or default"))
 
+    let rq = { name: "rq", flags: [ { short: "-v", long: "--verbose", count: true, required: true, help: "chatty" } ] }
+    let rq0 = facet_parse_debug(rq, [])
+    fails = fails + check("required count missing -> error", rq0.ok == false && contains(err_is(rq0), "missing required flag '--verbose'"))
+    fails = fails + check("required count -vv -> 2", field(facet_parse_debug(rq, ["-vv"]), "verbose", "<unset>") == 2)
+    fails = fails + check("required count help note", contains(facet_help(rq), "chatty (repeatable, required)"))
+
     // dispatch
     let calls = []
     let flat_out = facet_dispatch(spec, { main: |a| => "main:" + a.name }, rr.args)

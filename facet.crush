@@ -298,6 +298,7 @@ fn facet_help(spec) {
 }
 
 fn __facet_flag_note(f) {
+    if f.count == true && f.required == true { return " (repeatable, required)" }
     if f.count == true { return " (repeatable)" }
     if f.required == true { return " (required)" }
     return ""

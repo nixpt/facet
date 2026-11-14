@@ -91,6 +91,7 @@ Count flags: `{ short: "-v", long: "--verbose", count: true }` yields an int
 is allowed on flags only and cannot be combined with `type` or `default`;
 `--verbose=3` is a parse error. Help marks it "(repeatable)". It lands in
 `_provided` only when it appears in argv.
+`required: true` on a count flag means at least one occurrence (help: "(repeatable, required)").
 
 ```
 spec:        { name, usage?, version?, about?, epilog?,
