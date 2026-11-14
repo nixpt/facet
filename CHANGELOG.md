@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (0.3.0)
+
+### Added
+- Count flags: `count: true` on a flag gives an int (`-vvv` = 3); flags only,
+  no `type`/`default`, `--flag=N` is an error, help notes "(repeatable)".
+
 ## 0.2.0 — 2026-10-31
 
 ### Added

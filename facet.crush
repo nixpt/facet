@@ -298,6 +298,7 @@ fn facet_help(spec) {
 }
 
 fn __facet_flag_note(f) {
+    if f.count == true { return " (repeatable)" }
     if f.required == true { return " (required)" }
     return ""
 }
@@ -380,6 +381,13 @@ fn __facet_sub_names(subs) {
     return out
 }
 
+/// A flag seen in argv: booleans become true, count flags add one; the key
+/// is recorded in `provided` once.
+fn __facet_set_flag(f, data, key, provided) {
+    if f.count == true { data[key] = data[key] + 1 } else { data[key] = true }
+    if __facet_in(provided, key) == false { array.push(provided, key) }
+}
+
 fn __facet_parse_flat(spec, argv) {
     let flags = __facet_list(spec.flags)
     let options = __facet_list(spec.options)
@@ -391,7 +399,7 @@ fn __facet_parse_flat(spec, argv) {
     // subscript errors on absent keys even though field access returns null.
     for f in flags {
         let k = facet_key(f)
-        if f.default != null { data[k] = f.default } else { data[k] = false }
+        if f.count == true { data[k] = 0 } else if f.default != null { data[k] = f.default } else { data[k] = false }
     }
     for o in options {
         data[facet_key(o)] = null
@@ -455,8 +463,7 @@ fn __facet_parse_flat(spec, argv) {
                     return { ok: false, data: null, error: "flag '--" + name + "' does not take a value" }
                 }
                 let fk = facet_key(fhits[0])
-                data[fk] = true
-                array.push(provided, fk)
+                __facet_set_flag(fhits[0], data, fk, provided)
             }
         } else if __facet_starts_with(tok, "-") && len(tok) > 1 {
             // Short cluster: -abc are three booleans; -lv5 / -l 5 attach values.
@@ -466,8 +473,7 @@ fn __facet_parse_flat(spec, argv) {
                 let fhits = __facet_find_short(flags, short)
                 if len(fhits) > 0 {
                     let fk = facet_key(fhits[0])
-                    data[fk] = true
-                    array.push(provided, fk)
+                    __facet_set_flag(fhits[0], data, fk, provided)
                     j = j + 1
                 } else {
                     let ohits = __facet_find_short(options, short)
@@ -541,7 +547,7 @@ fn __facet_parse_flat(spec, argv) {
         }
     }
     for f in flags {
-        if f.required == true && data[facet_key(f)] != true {
+        if f.required == true && data[facet_key(f)] != true && (f.count != true || data[facet_key(f)] == 0) {
             return { ok: false, data: null, error: "missing required flag '" + __facet_opt_label(f) + "'" }
         }
     }
@@ -574,17 +580,21 @@ fn __facet_check_keys(where, e, allowed, problems) {
 }
 
 fn __facet_check_entries(where, spec, problems) {
-    let flag_keys = ["short", "long", "name", "default", "required", "help"]
+    let flag_keys = ["short", "long", "name", "default", "required", "help", "count"]
     let option_keys = ["short", "long", "name", "type", "default", "required", "choices", "env", "help"]
     let pos_keys = ["name", "type", "default", "required", "repeat", "help"]
     for f in __facet_list(spec.flags) {
         let w = where + " flag " + __facet_entry_label(f)
         __facet_check_keys(w, f, flag_keys, problems)
         if f.long == null && f.short == null { array.push(problems, w + ": needs `long` or `short`") }
+        if f.count == true && (f.type != null || f.default != null) {
+            array.push(problems, w + ": a count flag cannot have type or default")
+        }
     }
     for o in __facet_list(spec.options) {
         let w = where + " option " + __facet_entry_label(o)
         __facet_check_keys(w, o, option_keys, problems)
+        if o.count != null { array.push(problems, w + ": count is only allowed on flags") }
         if o.long == null && o.short == null { array.push(problems, w + ": needs `long` or `short`") }
         if o.type != null && __facet_is_one_of(o.type, ["str", "int", "float", "bool"]) == false {
             array.push(problems, w + ": type must be str, int, float or bool, not '" + conv.to_str(o.type) + "'")
@@ -593,6 +603,7 @@ fn __facet_check_entries(where, spec, problems) {
     for p in __facet_list(spec.positionals) {
         let w = where + " positional " + __facet_entry_label(p)
         __facet_check_keys(w, p, pos_keys, problems)
+        if p.count != null { array.push(problems, w + ": count is only allowed on flags") }
         if p.name == null { array.push(problems, w + ": needs `name`") }
     }
 }

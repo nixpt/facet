@@ -227,6 +227,37 @@ fn main() {
     fails = fails + check("top-level error carries the top spec", contains(facet_usage(rpe.spec), "Usage: greet"))
     fails = fails + check("help has no trailing newline", __facet_find(facet_help(git), "\n") >= 0 && facet_help(git)[len(facet_help(git)) - 1:len(facet_help(git))] != "\n")
 
+    // count flags
+    let cs = { name: "cnt", flags: [ { short: "-v", long: "--verbose", count: true, help: "chatty" }, { short: "-q", long: "--quiet", help: "hush" } ], positionals: [ { name: "files", repeat: true } ] }
+    let c0 = facet_parse_debug(cs, [])
+    fails = fails + check("count absent -> 0", field(c0, "verbose", "<unset>") == 0)
+    fails = fails + check("count at 0 not in _provided", __facet_in(field(c0, "_provided", []), "verbose") == false)
+    fails = fails + check("-v -> 1", field(facet_parse_debug(cs, ["-v"]), "verbose", "<unset>") == 1)
+    fails = fails + check("-vvv -> 3", field(facet_parse_debug(cs, ["-vvv"]), "verbose", "<unset>") == 3)
+    fails = fails + check("-v -v -> 2", field(facet_parse_debug(cs, ["-v", "-v"]), "verbose", "<unset>") == 2)
+    fails = fails + check("--verbose --verbose -> 2", field(facet_parse_debug(cs, ["--verbose", "--verbose"]), "verbose", "<unset>") == 2)
+    let cm = facet_parse_debug(cs, ["-vqv"])
+    fails = fails + check("-vqv -> v=2", field(cm, "verbose", "<unset>") == 2)
+    fails = fails + check("-vqv -> q=true", field(cm, "quiet", "<unset>") == true)
+    let cp = facet_parse_debug(cs, ["-vvv"])
+    fails = fails + check("count in _provided", __facet_in(field(cp, "_provided", []), "verbose") == true)
+    let cv = facet_parse_debug(cs, ["--verbose=3"])
+    fails = fails + check("--verbose=3 is an error", cv.ok == false)
+    fails = fails + check("--verbose=3 message", contains(err_is(cv), "does not take a value"))
+    fails = fails + check("count help note", contains(facet_help(cs), "chatty (repeatable)"))
+    let cg = { name: "g", subcommands: [ { name: "run", flags: [ { short: "-v", long: "--verbose", count: true } ] } ] }
+    let cgr = facet_resolve(cg, ["run", "-vv"])
+    fails = fails + check("count on subcommand", cgr.action == "run" && cgr.args.verbose == 2)
+    fails = fails + check("count spec ok", len(facet_check_spec(cs)) == 0)
+    let bad1 = facet_check_spec({ name: "b", options: [ { long: "--n", count: true } ] })
+    fails = fails + check("count rejected on option", contains(__facet_list_text(bad1), "count is only allowed on flags"))
+    let bad2 = facet_check_spec({ name: "b", positionals: [ { name: "n", count: true } ] })
+    fails = fails + check("count rejected on positional", contains(__facet_list_text(bad2), "count is only allowed on flags"))
+    let bad3 = facet_check_spec({ name: "b", flags: [ { long: "--n", count: true, type: "int" } ] })
+    fails = fails + check("count with type rejected", contains(__facet_list_text(bad3), "count flag cannot have type or default"))
+    let bad4 = facet_check_spec({ name: "b", flags: [ { long: "--n", count: true, default: 2 } ] })
+    fails = fails + check("count with default rejected", contains(__facet_list_text(bad4), "count flag cannot have type or default"))
+
     // dispatch
     let calls = []
     let flat_out = facet_dispatch(spec, { main: |a| => "main:" + a.name }, rr.args)
