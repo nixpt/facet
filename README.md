@@ -16,32 +16,49 @@ That yields `--help`, `-vh`-style bundling, `--level=2`/`-l2`/`-l 2`,
 positional collection, typed defaults and column-aligned help — all from
 the spec. Runnable examples in [`demo/`](demo/).
 
-> **Crush has no source-level imports yet** (`module.load` is unimplemented
-> upstream). Consume facet either way:
->
-> **1. Concatenate** (one-off scripts):
-> ```sh
-> cat facet.crush my_program.crush > /tmp/my_program.crush
-> crush-run run /tmp/my_program.crush -- --help
-> ```
->
-> **2. crush-pkg path dependency** (projects — see
-> [`examples/consumer/`](examples/consumer)):
-> ```toml
-> [[dependencies]]
-> name = "facet"
-> path = "../facet"
-> ```
-> ```sh
-> crush-pkg build
-> crush-run run target/<name>.cvm -- --help
-> ```
-> Known upstream limits (crush-ast CRUSH-348/349, 2026-10-31): `crush-pkg run`
-> does not see path deps, and crush-pkg turns `sys.exit(n)` into an E-RUN
-> failure while dropping pre-exit output — run the built `.cvm` with
-> `crush-run` until those land.
->
-> Functions are global by design; everything internal is `__facet_`-prefixed.
+## Consuming facet
+
+facet is one definitions-only file, so Crush's compile-time `import` (CRUSH-110)
+works on it. Use the brace form, which binds the names bare:
+
+```crush
+import facet { facet_run, facet_fail }   // only public names import; __facet_* do not
+```
+
+**1. `import` + `-L`** (scripts and projects):
+```sh
+crush-run run -L <facet dir> my_program.crush -- --help
+# or: CRUSH_PATH=<facet dir> crush-run run my_program.crush -- --help
+```
+(Plain `import facet` also works, but namespaces the functions: call
+`facet.facet_parse(spec)`; bare calls then fail with `Undefined function`.)
+
+**2. crush-pkg path dependency** (see [`examples/consumer/`](examples/consumer)):
+```toml
+[[dependencies]]
+name = "facet"
+path = "../facet"
+```
+```sh
+crush-pkg run -- --help       # keep `import facet { ... }` in main.crush
+```
+
+**3. Concatenation** (fallback for one-off scripts; the program must NOT have an
+`import facet` line, or the names collide):
+```sh
+cat facet.crush my_program.crush > /tmp/my_program.crush
+crush-run run /tmp/my_program.crush -- --help
+```
+
+**Env fallback** needs the [`facet_env.crush`](facet_env.crush) companion. It imports
+facet itself, so it is **import-only**: do not concatenate it with `facet.crush` (the
+names collide). In your program:
+```crush
+import facet { facet_parse }
+import facet_env { facet_env_apply }
+```
+Grant `--env` BEFORE the `--`, even for `--help` (the capability check covers the
+whole program): `crush-run run -L . --env prog.crush -- --name Ada`.
 
 ## A whole CLI in one call
 
@@ -106,7 +123,7 @@ subcommands: { name, usage?, help?, about?, epilog?, flags?, options?, positiona
 Semantics: `--` ends option parsing; `-abc` bundles boolean shorts;
 `-lv5` = `-l v5`; unknown option / missing value / bad type / choices miss /
 missing required ⇒ exit 2. Options with `env:` need the
-[`facet_env.crush`](facet_env.crush) companion (`facet_env_apply(spec, args)`,
+[`facet_env.crush`](facet_env.crush) companion (import-only; `facet_env_apply(spec, args)`,
 precedence **argv > env > default**, requires `--env`).
 
 ## Engine support
@@ -128,7 +145,7 @@ precedence **argv > env > default**, requires `--env`).
 ./test/run.sh
 ```
 
-Concatenates `facet.crush` + `facet_test.crush` and runs the self test (needs
-`crush-run` on PATH). Design notes:
+Runs each demo's `--help` through the import form, then concatenates `facet.crush` +
+`facet_test.crush` for the self test (it needs the internals; needs `crush-run` on PATH). Design notes:
 [`docs/plans/2026-10-31-facet-design.md`](docs/plans/2026-10-31-facet-design.md).
 Requires crush-ast ≥ 0.9.0.
