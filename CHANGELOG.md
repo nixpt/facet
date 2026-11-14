@@ -14,11 +14,14 @@
   plus `crush-run run -L`, then a crush-pkg path dep, then concatenation as the
   fallback. `demo/greet`, `demo/todo` and `examples/consumer` use the import form.
 - `test/run.sh` also runs each demo's `--help` and fails if any exits non-zero.
+- facet_env is import-only; it imports facet itself (and keeps private copies of two
+  tiny helpers). Concatenating it with `facet.crush` now collides. `demo/env_greet`
+  uses `import`, and `test/run.sh` runs it with `-L . --env`.
 - Dropped the stale "no imports" and CRUSH-348/349 caveats.
 
 ### Fixed
 - `demo/env_greet.crush` header: `--env` goes before `--` (and is needed even
-  for `--help`); it now says why it still concatenates (facet_env uses internals).
+  for `--help`).
 
 ## 0.2.0 — 2026-10-31
 

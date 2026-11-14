@@ -50,10 +50,15 @@ cat facet.crush my_program.crush > /tmp/my_program.crush
 crush-run run /tmp/my_program.crush -- --help
 ```
 
-**Env fallback** needs the [`facet_env.crush`](facet_env.crush) companion, which uses
-facet internals, so it is concatenated (`cat facet.crush facet_env.crush prog.crush`).
+**Env fallback** needs the [`facet_env.crush`](facet_env.crush) companion. It imports
+facet itself, so it is **import-only**: do not concatenate it with `facet.crush` (the
+names collide). In your program:
+```crush
+import facet { facet_parse }
+import facet_env { facet_env_apply }
+```
 Grant `--env` BEFORE the `--`, even for `--help` (the capability check covers the
-whole program): `crush-run run --env /tmp/prog.crush -- --name Ada`.
+whole program): `crush-run run -L . --env prog.crush -- --name Ada`.
 
 ## A whole CLI in one call
 
@@ -111,7 +116,7 @@ subcommands: { name, usage?, help?, about?, epilog?, flags?, options?, positiona
 Semantics: `--` ends option parsing; `-abc` bundles boolean shorts;
 `-lv5` = `-l v5`; unknown option / missing value / bad type / choices miss /
 missing required ⇒ exit 2. Options with `env:` need the
-[`facet_env.crush`](facet_env.crush) companion (`facet_env_apply(spec, args)`,
+[`facet_env.crush`](facet_env.crush) companion (import-only; `facet_env_apply(spec, args)`,
 precedence **argv > env > default**, requires `--env`).
 
 ## Engine support
