@@ -324,6 +324,14 @@ fn main() {
     let ug = { name: "u", flags: [ { long: "--a" }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--nope"] } ] }
     fails = fails + check("unknown member: parse_debug does not crash", facet_parse_debug(ug, ["--a"]).ok == true)
     fails = fails + check("unknown member: resolve does not crash", facet_resolve(ug, ["--a"]).action == "run")
+    // count flag inside option groups
+    let cg = { name: "cg", flags: [ { short: "-v", long: "--verbose", count: true }, { short: "-q", long: "--quiet" } ], groups: [ { exclusive: ["--verbose", "--quiet"] } ] }
+    let cg1 = facet_parse_debug(cg, ["-vvv"])
+    fails = fails + check("count in exclusive group: -vvv passes", cg1.ok == true && field(cg1, "verbose", "<unset>") == 3)
+    fails = fails + check("count in exclusive group: -v -q fails", err_is(facet_parse_debug(cg, ["-v", "-q"])) == "--verbose and --quiet are mutually exclusive")
+    let co = { name: "co", flags: [ { short: "-v", long: "--verbose", count: true }, { short: "-q", long: "--quiet" } ], groups: [ { one_of: ["--verbose", "--quiet"] } ] }
+    fails = fails + check("count in one_of group: -vv satisfies", facet_parse_debug(co, ["-vv"]).ok == true)
+    fails = fails + check("count in one_of group: no args fails", err_is(facet_parse_debug(co, [])) == "one of --verbose, --quiet is required")
     if fails > 0 {
         print("FAILED: " + conv.to_str(fails) + " check(s)")
         sys.exit(1)
