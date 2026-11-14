@@ -235,6 +235,47 @@ fn main() {
     let sub_out = facet_dispatch(git, { add: |a| => "add:" + a.path, status: |a| => "status" }, ga.args)
     fails = fails + check("dispatch subcommand", sub_out == "add:x.txt")
 
+    // option groups
+    let gs = { name: "fmt", flags: [ { long: "--json" }, { long: "--table" }, { long: "--csv" }, { short: "-q" } ], options: [ { long: "--user", type: "str" }, { long: "--pass", type: "str" }, { long: "--level", type: "int", default: 1 } ], groups: [ { exclusive: ["--json", "--table", "--csv"] }, { together: ["--user", "--pass"] }, { one_of: ["--user", "-q"] } ] }
+    fails = fails + check("groups: spec is valid", len(facet_check_spec(gs)) == 0)
+    let g1 = facet_parse_debug(gs, ["--json", "--user", "u", "--pass", "p"])
+    fails = fails + check("exclusive: one member passes", g1.ok == true)
+    let g2 = facet_parse_debug(gs, ["--table", "--json", "-q"])
+    fails = fails + check("exclusive: names first two given in declared order", err_is(g2) == "--json and --table are mutually exclusive")
+    let g3 = facet_parse_debug(gs, ["--csv", "--json", "-q"])
+    fails = fails + check("exclusive 3-member: first two of declared order", err_is(g3) == "--json and --csv are mutually exclusive")
+    let g4 = facet_parse_debug(gs, ["--user", "u"])
+    fails = fails + check("together: first given requires first missing", err_is(g4) == "--user requires --pass")
+    let g5 = facet_parse_debug(gs, ["--pass", "p"])
+    fails = fails + check("together: reversed", err_is(g5) == "--pass requires --user")
+    let g6 = facet_parse_debug(gs, ["-q"])
+    fails = fails + check("together: none given passes; one_of satisfied", g6.ok == true)
+    let g7 = facet_parse_debug(gs, [])
+    fails = fails + check("one_of: none given fails", err_is(g7) == "one of --user, -q is required")
+    let g8 = facet_parse_debug(gs, ["-q", "--level", "2"])
+    fails = fails + check("defaults/other options do not count", g8.ok == true)
+    let ds = { name: "d", flags: [ { long: "--a", default: true }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--b"] } ] }
+    fails = fails + check("exclusive: a default does not count", facet_parse_debug(ds, ["--b"]).ok == true)
+    fails = fails + check("exclusive: argv both fails", err_is(facet_parse_debug(ds, ["--a", "--b"])) == "--a and --b are mutually exclusive")
+    let rq = { name: "r", options: [ { long: "--x", required: true } ], flags: [ { long: "--a" }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--b"] } ] }
+    fails = fails + check("groups run after required", contains(err_is(facet_parse_debug(rq, ["--a", "--b"])), "missing required option '--x'"))
+    let gsub = { name: "p", subcommands: [ { name: "go", flags: [ { long: "--fast" }, { long: "--slow" } ], groups: [ { exclusive: ["--fast", "--slow"] } ] } ] }
+    fails = fails + check("subcommand group: passes", facet_parse_debug(gsub, ["go", "--fast"]).ok == true)
+    fails = fails + check("subcommand group: fails", err_is(facet_parse_debug(gsub, ["go", "--fast", "--slow"])) == "--fast and --slow are mutually exclusive")
+    fails = fails + check("subcommand group spec valid", len(facet_check_spec(gsub)) == 0)
+    let gse = facet_resolve(gsub, ["go", "--fast", "--slow"])
+    fails = fails + check("group error is a resolve error", gse.action == "error" && contains(gse.text, "mutually exclusive"))
+    let bg1 = { name: "b", flags: [ { long: "--a" }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--nope"] } ] }
+    fails = fails + check("spec check: unknown member", contains(__facet_list_text(facet_check_spec(bg1)), "--nope"))
+    let bg2 = { name: "b", flags: [ { long: "--a" } ], groups: [ { exclusive: ["--a"] } ] }
+    fails = fails + check("spec check: fewer than 2 members", len(facet_check_spec(bg2)) > 0)
+    let bg3 = { name: "b", flags: [ { long: "--a" }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--b"], together: ["--a", "--b"] } ] }
+    fails = fails + check("spec check: several kinds", len(facet_check_spec(bg3)) > 0)
+    let bg4 = { name: "b", flags: [ { long: "--a" }, { long: "--b" } ], groups: [ {} ] }
+    fails = fails + check("spec check: zero kinds", len(facet_check_spec(bg4)) > 0)
+    let bg5 = { name: "b", subcommands: [ { name: "s", flags: [ { long: "--a" }, { long: "--b" } ] } ], flags: [ { long: "--c" }, { long: "--d" } ], groups: [ { exclusive: ["--c", "--a"] } ] }
+    fails = fails + check("spec check: member must be at the same level", len(facet_check_spec(bg5)) > 0)
+
     if fails > 0 {
         print("FAILED: " + conv.to_str(fails) + " check(s)")
         sys.exit(1)

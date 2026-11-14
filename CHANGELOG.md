@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (0.3.0)
+
+### Added
+- Option groups: spec key `groups` (`exclusive`, `together`, `one_of`), at top
+  level and on subcommands; checked after required/choices, argv-given only.
+
 ## 0.2.0 — 2026-10-31
 
 ### Added

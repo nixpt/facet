@@ -337,7 +337,7 @@ fn __facet_sub_spec(parent, sub) {
         usage = usage + __facet_usage_options(sub.options)
         usage = usage + __facet_usage_positionals(sub.positionals)
     }
-    return { name: parent.name, usage: usage, about: sub.about, epilog: sub.epilog, flags: sub.flags, options: sub.options, positionals: sub.positionals }
+    return { name: parent.name, usage: usage, about: sub.about, epilog: sub.epilog, flags: sub.flags, options: sub.options, positionals: sub.positionals, groups: sub.groups }
 }
 
 /// Parse an already-given argv (no sys.args, no output, no exit).
@@ -378,6 +378,38 @@ fn __facet_sub_names(subs) {
         out = out + s.name
     }
     return out
+}
+
+// ── option groups ──────────────────────────────────────────────────────────
+/// The flag/option a group member names (long name, or short when the entry
+/// has no long), or [].
+fn __facet_group_entry(spec, member) {
+    for list in [__facet_list(spec.flags), __facet_list(spec.options)] {
+        for e in list {
+            if e.long == member { return [e] }
+            if e.long == null && e.short == member { return [e] }
+        }
+    }
+    return []
+}
+
+/// Error text for the first violated group, or "". "Set" = in `provided`.
+fn __facet_group_error(spec, provided) {
+    for g in __facet_list(spec.groups) {
+        let kind = "exclusive"
+        let members = g.exclusive
+        if g.together != null { kind = "together"; members = g.together }
+        if g.one_of != null { kind = "one_of"; members = g.one_of }
+        let given = []
+        let missing = []
+        for m in __facet_list(members) {
+            if __facet_in(provided, facet_key(__facet_group_entry(spec, m)[0])) { array.push(given, m) } else { array.push(missing, m) }
+        }
+        if kind == "exclusive" && len(given) > 1 { return given[0] + " and " + given[1] + " are mutually exclusive" }
+        if kind == "together" && len(given) > 0 && len(missing) > 0 { return given[0] + " requires " + missing[0] }
+        if kind == "one_of" && len(given) == 0 { return "one of " + __facet_list_text(members) + " is required" }
+    }
+    return ""
 }
 
 fn __facet_parse_flat(spec, argv) {
@@ -545,6 +577,8 @@ fn __facet_parse_flat(spec, argv) {
             return { ok: false, data: null, error: "missing required flag '" + __facet_opt_label(f) + "'" }
         }
     }
+    let gerr = __facet_group_error(spec, provided)
+    if gerr != "" { return { ok: false, data: null, error: gerr } }
     data["_provided"] = provided
     return { ok: true, data: data, error: null }
 }
@@ -597,6 +631,24 @@ fn __facet_check_entries(where, spec, problems) {
     }
 }
 
+fn __facet_check_groups(where, spec, problems) {
+    for g in __facet_list(spec.groups) {
+        let kinds = []
+        for k in collections.keys(g) {
+            if __facet_is_one_of(k, ["exclusive", "together", "one_of"]) { array.push(kinds, k) } else { array.push(problems, where + " group: unknown key '" + k + "'") }
+        }
+        if len(kinds) != 1 {
+            array.push(problems, where + " group: needs exactly one of exclusive, together, one_of")
+        } else {
+            let members = __facet_list(g[kinds[0]])
+            if len(members) < 2 { array.push(problems, where + " group " + kinds[0] + ": needs at least 2 members") }
+            for m in members {
+                if len(__facet_group_entry(spec, m)) == 0 { array.push(problems, where + " group " + kinds[0] + ": unknown member '" + conv.to_str(m) + "'") }
+            }
+        }
+    }
+}
+
 /// Problems in a spec map, as readable lines ([] when the spec is fine):
 /// unknown keys (typos like `requried`), entries with no `long`/`short`,
 /// a positional without `name`, an unknown option `type`, a spec without
@@ -604,14 +656,16 @@ fn __facet_check_entries(where, spec, problems) {
 /// show up on the first run instead of as silently ignored keys.
 fn facet_check_spec(spec) {
     let problems = []
-    __facet_check_keys("spec", spec, ["name", "usage", "version", "about", "epilog", "flags", "options", "positionals", "subcommands"], problems)
+    __facet_check_keys("spec", spec, ["name", "usage", "version", "about", "epilog", "flags", "options", "positionals", "subcommands", "groups"], problems)
     if spec.name == null { array.push(problems, "spec: needs `name` (the program name)") }
     __facet_check_entries("spec", spec, problems)
+    __facet_check_groups("spec", spec, problems)
     for s in __facet_list(spec.subcommands) {
         let w = "subcommand " + __facet_entry_label(s)
-        __facet_check_keys(w, s, ["name", "usage", "help", "about", "epilog", "flags", "options", "positionals"], problems)
+        __facet_check_keys(w, s, ["name", "usage", "help", "about", "epilog", "flags", "options", "positionals", "groups"], problems)
         if s.name == null { array.push(problems, w + ": needs `name`") }
         __facet_check_entries(w, s, problems)
+        __facet_check_groups(w, s, problems)
     }
     return problems
 }
