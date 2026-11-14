@@ -10,6 +10,8 @@
 ## Unreleased (0.3.0)
 
 ### Added
+- Count flags: `count: true` on a flag gives an int (`-vvv` = 3); flags only,
+  no `type`/`default`, `--flag=N` is an error, help notes "(repeatable)".
 - Option groups: spec key `groups` (`exclusive`, `together`, `one_of`), at top
   level and on subcommands; checked after required/choices, argv-given only.
 
