@@ -1,11 +1,13 @@
-// demo/greet.crush — a small real CLI built on facet (concatenate with
-// facet.crush, or add facet as a path dependency in a crush-pkg manifest).
+// demo/greet.crush — a small real CLI built on facet.
 //
 //   greet [options] [files...]
 //   greet --help
 //
-// Run locally:  cat ../facet.crush greet.crush > /tmp/greet.crush
-//               crush-run run /tmp/greet.crush -- --name World -l2 a.txt
+// Run from the facet repo root (facet is imported, no concatenation):
+//   crush-run run -L . demo/greet.crush -- --name World -l2 a.txt
+//   crush-run run -L . demo/greet.crush -- --help
+
+import facet { facet_parse }
 
 fn main() {
     let spec = { name: "greet", usage: "greet [options] [files...]", flags: [ { short: "-v", long: "--verbose", help: "say more" } ], options: [ { long: "--level", short: "-l", type: "int", default: 1, choices: [1, 2, 3], help: "verbosity level" }, { long: "--name", type: "str", required: true, help: "who to greet" } ], positionals: [ { name: "files", repeat: true, help: "files to mention" } ] }

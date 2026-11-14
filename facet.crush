@@ -549,6 +549,8 @@ fn __facet_parse_flat(spec, argv) {
             if len(vals) > 0 {
                 data[p.name] = vals
                 array.push(provided, p.name)
+            } else if p.required == true {
+                return { ok: false, data: null, error: "missing required argument '" + p.name + "'" }
             }
         } else if k < len(pos_vals) {
             let c = __facet_coerce(p, pos_vals[k], "argument '" + p.name + "'")

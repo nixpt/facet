@@ -160,6 +160,14 @@ fn main() {
     fails = fails + check("subcommand missing positional", x.ok == false)
     fails = fails + check("subcommand missing positional message", contains(err_is(x), "missing required argument 'path'"))
 
+    let rr = { name: "polish", positionals: [ { name: "files", repeat: true, required: true, help: "files to format" } ] }
+    let r0 = facet_parse_debug(rr, [])
+    fails = fails + check("required repeat, no values", r0.ok == false)
+    fails = fails + check("required repeat message", contains(err_is(r0), "missing required argument 'files'"))
+    let r1 = facet_parse_debug(rr, ["a.txt"])
+    fails = fails + check("required repeat, one value", r1.ok == true)
+    fails = fails + check("required repeat value kept", field(r1, "files", "<unset>") == ["a.txt"])
+
     // rendered text
     let help = facet_help(spec)
     fails = fails + check("help has usage", contains(help, "Usage: greet"))
