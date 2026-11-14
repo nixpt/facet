@@ -18,12 +18,11 @@ for demo in demo/greet.crush demo/todo.crush; do
         echo "FAIL import --help: $demo"; cat "$TMP/help.out"; exit 1
     fi
 done
-# env_greet needs facet_env's internals, so it concatenates; --env goes before `--`.
-cat facet.crush facet_env.crush demo/env_greet.crush > "$TMP/env_greet.crush"
-if "$CRUSH_RUN" run --env "$TMP/env_greet.crush" -- --help < /dev/null > "$TMP/help.out" 2>&1; then
-    echo "ok   concat --help: demo/env_greet.crush"
+# env_greet imports facet_env (import-only); --env goes before `--`.
+if "$CRUSH_RUN" run -L . --env demo/env_greet.crush -- --help < /dev/null > "$TMP/help.out" 2>&1; then
+    echo "ok   import --help: demo/env_greet.crush"
 else
-    echo "FAIL concat --help: demo/env_greet.crush"; cat "$TMP/help.out"; exit 1
+    echo "FAIL import --help: demo/env_greet.crush"; cat "$TMP/help.out"; exit 1
 fi
 
 # 2. self test (last line: "all facet checks passed").
