@@ -1,13 +1,6 @@
 # Changelog
 
-## 0.2.1 — 2026-11-14
-
-### Fixed
-- A required repeating positional (`repeat: true, required: true`) now needs at
-  least one value: with none it fails with `missing required argument '<name>'`
-  instead of parsing to an empty list (#2).
-
-## Unreleased (0.3.0)
+## 0.3.0 — 2026-11-14
 
 ### Added
 - Count flags: `count: true` on a flag gives an int (`-vvv` = 3); flags only,
@@ -28,6 +21,13 @@
 ### Fixed
 - `demo/env_greet.crush` header: `--env` goes before `--` (and is needed even
   for `--help`).
+
+## 0.2.1 — 2026-11-14
+
+### Fixed
+- A required repeating positional (`repeat: true, required: true`) now needs at
+  least one value: with none it fails with `missing required argument '<name>'`
+  instead of parsing to an empty list (#2).
 
 ## 0.2.0 — 2026-10-31
 
