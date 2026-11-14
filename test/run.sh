@@ -39,6 +39,8 @@ else
     echo "FAIL argv beats env: got '$out'"; exit 1
 fi
 
-# 2. self test (last line: "all facet checks passed").
+# 2. self test (last line: "all facet checks passed"). stderr is shown (a
+# runtime crash must print its message); the VM's `[steps=...]` noise lines
+# are filtered out.
 cat facet.crush facet_test.crush > "$TMP/facet_test.crush"
-"$CRUSH_RUN" run "$TMP/facet_test.crush" < /dev/null 2>/dev/null
+"$CRUSH_RUN" run "$TMP/facet_test.crush" < /dev/null 2> >(grep -v '^\[steps=' >&2)

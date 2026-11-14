@@ -12,6 +12,8 @@
 ### Added
 - Count flags: `count: true` on a flag gives an int (`-vvv` = 3); flags only,
   no `type`/`default`, `--flag=N` is an error, help notes "(repeatable)".
+- Option groups: spec key `groups` (`exclusive`, `together`, `one_of`), at top
+  level and on subcommands; checked after required/choices, argv-given only.
 
 ### Changed
 - Import-first docs and demos (FACET-4): README leads with `import facet { ... }`

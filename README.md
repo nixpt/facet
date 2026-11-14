@@ -112,13 +112,33 @@ is allowed on flags only and cannot be combined with `type` or `default`;
 
 ```
 spec:        { name, usage?, version?, about?, epilog?,
-               flags?, options?, positionals?, subcommands? }
+               flags?, options?, positionals?, subcommands?, groups? }
 flags:       { short?, long?, name?, default?, required?, count?, help? } // boolean; count: true => int
 options:     { short?, long?, name?, type?, default?, required?,        // type: str|int|float|bool
                choices?, env?, help? }
 positionals: { name, type?, default?, required?, repeat?, help? }
-subcommands: { name, usage?, help?, about?, epilog?, flags?, options?, positionals? }
+subcommands: { name, usage?, help?, about?, epilog?, flags?, options?, positionals?, groups? }
+groups:      [ { exclusive: [...] } | { together: [...] } | { one_of: [...] } ]
 ```
+
+**Option groups** (`groups`, top level or on a subcommand): each group object
+has exactly one kind and lists 2+ members, a flag's or option's long name
+(`"--json"`), or its short name (`"-j"`) when it has no long. Members must be
+declared at the same level as the group. Violations are parse errors (exit 2):
+
+- `exclusive`: at most one given: `--json and --table are mutually exclusive`
+  (the first two given, in declared order).
+- `together`: if any is given, all must be: `--user requires --pass` (first
+  given, first missing).
+- `one_of`: at least one given: `one of --a, --b is required`. Exactly-one is
+  `one_of` plus `exclusive` over the same members.
+
+"Given" means it came from argv (it is in `_provided`): defaults do not count,
+and `facet_env` values (filled after the parse) do not count either. Group
+checks run after the required and choices checks, in declared group order.
+`facet_check_spec` rejects unknown members, groups with fewer than 2 members
+and group objects without exactly one kind (exit 70). `--help` does not list
+groups yet.
 
 Semantics: `--` ends option parsing; `-abc` bundles boolean shorts;
 `-lv5` = `-l v5`; unknown option / missing value / bad type / choices miss /
