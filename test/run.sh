@@ -25,6 +25,20 @@ else
     echo "FAIL import --help: demo/env_greet.crush"; cat "$TMP/help.out"; exit 1
 fi
 
+# env_greet behaviour: env fills an unset option; argv beats env.
+out="$(GREET_LEVEL=3 "$CRUSH_RUN" run -L . --env demo/env_greet.crush -- --name Ada < /dev/null 2>&1)" || true
+if [ "$out" = "level=3 name=Ada" ]; then
+    echo "ok   env fallback: $out"
+else
+    echo "FAIL env fallback: got '$out'"; exit 1
+fi
+out="$(GREET_LEVEL=3 "$CRUSH_RUN" run -L . --env demo/env_greet.crush -- --name Ada -l 2 < /dev/null 2>&1)" || true
+if [ "$out" = "level=2 name=Ada" ]; then
+    echo "ok   argv beats env: $out"
+else
+    echo "FAIL argv beats env: got '$out'"; exit 1
+fi
+
 # 2. self test (last line: "all facet checks passed").
 cat facet.crush facet_test.crush > "$TMP/facet_test.crush"
 "$CRUSH_RUN" run "$TMP/facet_test.crush" < /dev/null 2>/dev/null
