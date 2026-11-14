@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased (0.3.0)
+
+### Changed
+- Import-first docs and demos (FACET-4): README leads with `import facet { ... }`
+  plus `crush-run run -L`, then a crush-pkg path dep, then concatenation as the
+  fallback. `demo/greet`, `demo/todo` and `examples/consumer` use the import form.
+- `test/run.sh` also runs each demo's `--help` and fails if any exits non-zero.
+- Dropped the stale "no imports" and CRUSH-348/349 caveats.
+
+### Fixed
+- `demo/env_greet.crush` header: `--env` goes before `--` (and is needed even
+  for `--help`); it now says why it still concatenates (facet_env uses internals).
+
 ## 0.2.0 — 2026-10-31
 
 ### Added
