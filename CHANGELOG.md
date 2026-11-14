@@ -9,6 +9,10 @@
 
 ## Unreleased (0.3.0)
 
+### Added
+- Count flags: `count: true` on a flag gives an int (`-vvv` = 3); flags only,
+  no `type`/`default`, `--flag=N` is an error, help notes "(repeatable)".
+
 ### Changed
 - Import-first docs and demos (FACET-4): README leads with `import facet { ... }`
   plus `crush-run run -L`, then a crush-pkg path dep, then concatenation as the
