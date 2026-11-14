@@ -10,4 +10,6 @@ OUT="$(mktemp -d)/facet_test.crush"
 cat facet.crush facet_test.crush > "$OUT"
 
 # stdin </dev/null: never let a program block on an inherited pipe.
-"$CRUSH_RUN" run "$OUT" < /dev/null 2>/dev/null
+# stderr is shown (a runtime crash must print its message); the VM's
+# `[steps=...]` noise lines are filtered out.
+"$CRUSH_RUN" run "$OUT" < /dev/null 2> >(grep -v '^\[steps=' >&2)

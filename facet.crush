@@ -403,7 +403,9 @@ fn __facet_group_error(spec, provided) {
         let given = []
         let missing = []
         for m in __facet_list(members) {
-            if __facet_in(provided, facet_key(__facet_group_entry(spec, m)[0])) { array.push(given, m) } else { array.push(missing, m) }
+            // An undeclared member counts as not given (facet_check_spec reports it).
+            let found = __facet_group_entry(spec, m)
+            if len(found) > 0 && __facet_in(provided, facet_key(found[0])) { array.push(given, m) } else { array.push(missing, m) }
         }
         if kind == "exclusive" && len(given) > 1 { return given[0] + " and " + given[1] + " are mutually exclusive" }
         if kind == "together" && len(given) > 0 && len(missing) > 0 { return given[0] + " requires " + missing[0] }

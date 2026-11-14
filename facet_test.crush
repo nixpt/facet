@@ -276,6 +276,9 @@ fn main() {
     let bg5 = { name: "b", subcommands: [ { name: "s", flags: [ { long: "--a" }, { long: "--b" } ] } ], flags: [ { long: "--c" }, { long: "--d" } ], groups: [ { exclusive: ["--c", "--a"] } ] }
     fails = fails + check("spec check: member must be at the same level", len(facet_check_spec(bg5)) > 0)
 
+    let ug = { name: "u", flags: [ { long: "--a" }, { long: "--b" } ], groups: [ { exclusive: ["--a", "--nope"] } ] }
+    fails = fails + check("unknown member: parse_debug does not crash", facet_parse_debug(ug, ["--a"]).ok == true)
+    fails = fails + check("unknown member: resolve does not crash", facet_resolve(ug, ["--a"]).action == "run")
     if fails > 0 {
         print("FAILED: " + conv.to_str(fails) + " check(s)")
         sys.exit(1)
