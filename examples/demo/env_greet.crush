@@ -1,10 +1,10 @@
-// demo/env_greet.crush — env fallback via the facet_env companion (import form).
+// examples/demo/env_greet.crush — env fallback via the facet_env companion (import form).
 //
 // facet_env imports facet itself and is import-only. Run from the facet repo
 // root. The --env grant goes BEFORE `--`, and is needed even for --help,
 // because the capability check covers the whole program:
-//   GREET_LEVEL=3 crush-run run -L . --env demo/env_greet.crush -- --name Ada
-//   crush-run run -L . --env demo/env_greet.crush -- --help
+//   GREET_LEVEL=3 crush-run run -L . --env examples/demo/env_greet.crush -- --name Ada
+//   crush-run run -L . --env examples/demo/env_greet.crush -- --help
 // With GREET_LEVEL=3 the --level option's env fallback applies when argv
 // leaves it unset.
 

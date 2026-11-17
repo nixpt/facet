@@ -1,11 +1,11 @@
-// demo/greet.crush — a small real CLI built on facet.
+// examples/demo/greet.crush — a small real CLI built on facet.
 //
 //   greet [options] [files...]
 //   greet --help
 //
 // Run from the facet repo root (facet is imported, no concatenation):
-//   crush-run run -L . demo/greet.crush -- --name World -l2 a.txt
-//   crush-run run -L . demo/greet.crush -- --help
+//   crush-run run -L . examples/demo/greet.crush -- --name World -l2 a.txt
+//   crush-run run -L . examples/demo/greet.crush -- --help
 
 import facet { facet_parse }
 

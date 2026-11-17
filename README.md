@@ -14,7 +14,7 @@ io.print("Hello, " + args.name + " (level " + conv.to_str(args.level) + ")")
 
 That yields `--help`, `-vh`-style bundling, `--level=2`/`-l2`/`-l 2`,
 positional collection, typed defaults and column-aligned help — all from
-the spec. Runnable examples in [`demo/`](demo/).
+the spec. Runnable examples in [`examples/demo/`](examples/demo/).
 
 ## Consuming facet
 
@@ -75,7 +75,7 @@ fn main() {
 
 That gives `todo --help`, `todo --version`, `todo add --help` (the
 subcommand's own options), typed and validated arguments, and exit status
-0 / 2 everywhere, with no other code. Full program: [`demo/todo.crush`](demo/todo.crush).
+0 / 2 everywhere, with no other code. Full program: [`examples/demo/todo.crush`](examples/demo/todo.crush).
 
 ## API
 
@@ -162,10 +162,10 @@ precedence **argv > env > default**, requires `--env`).
 ## Tests
 
 ```sh
-./test/run.sh
+./tests/run.sh
 ```
 
 Runs each demo's `--help` through the import form, then concatenates `facet.crush` +
-`facet_test.crush` for the self test (it needs the internals; needs `crush-run` on PATH). Design notes:
+`tests/facet_test.crush` for the self test (it needs the internals; needs `crush-run` on PATH). Design notes:
 [`docs/plans/2026-10-31-facet-design.md`](docs/plans/2026-10-31-facet-design.md).
 Requires crush-ast ≥ 0.9.0.

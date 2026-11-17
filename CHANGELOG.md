@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Visibility stage 2 (crush-ast#520, FACET-11): the API is marked `pub`:
+  `facet_run`, `facet_parse`, `facet_resolve`, `facet_dispatch`, `facet_fail`,
+  `facet_help`, `facet_usage`, `facet_version_text`, `facet_check_spec`,
+  `facet_parse_debug` and `facet_env_apply`. Every other name (the `__facet_*`
+  helpers, `facet_key`, `facet_coerce_value`) is private to the directory, and
+  importers no longer get the `N-VIS01` note. Needs a crush-ast with `pub`
+  (after 0.11.2).
+- Layout: `demo/` moved to `examples/demo/`, and `test/` plus `facet_test.crush`
+  moved to `tests/`, so programs with helpers sit outside the gated tree;
+  `crush-pkg build --deny-legacy-visibility` passes.
+
 ## 0.3.0 — 2026-11-14
 
 ### Added
