@@ -34,7 +34,7 @@ fn __facet_env_in(choices, value) {
     return false
 }
 
-fn facet_env_apply(spec, args) {
+pub fn facet_env_apply(spec, args) {
     // Argv always wins; env only fills options the user did not pass.
     // `_provided` records exactly the keys that came from argv.
     let given = []

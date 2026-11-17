@@ -201,7 +201,7 @@ fn __facet_usage_positionals(positionals) {
 
 /// "Usage: ..." line. Uses `spec.usage` verbatim when present, else builds it
 /// from the declared entries.
-fn facet_usage(spec) {
+pub fn facet_usage(spec) {
     if spec.usage != null { return "Usage: " + spec.usage }
     let s = "Usage: " + spec.name
     s = s + __facet_usage_flags(spec.flags)
@@ -247,7 +247,7 @@ fn __facet_render_section(title, rows, width) {
 }
 
 /// Full help text: usage line, then Options / Positionals / Subcommands.
-fn facet_help(spec) {
+pub fn facet_help(spec) {
     let flags = __facet_list(spec.flags)
     let options = __facet_list(spec.options)
     let positionals = __facet_list(spec.positionals)
@@ -344,7 +344,7 @@ fn __facet_sub_spec(parent, sub) {
 
 /// Parse an already-given argv (no sys.args, no output, no exit).
 /// Returns { ok: bool, data: map|null, error: text|null }.
-fn facet_parse_debug(spec, argv) {
+pub fn facet_parse_debug(spec, argv) {
     let subs = __facet_list(spec.subcommands)
     if len(subs) > 0 {
         if len(argv) == 0 {
@@ -670,7 +670,7 @@ fn __facet_check_groups(where, spec, problems) {
 /// a positional without `name`, an unknown option `type`, a spec without
 /// `name`. facet_parse refuses a spec with problems (exit 70) so mistakes
 /// show up on the first run instead of as silently ignored keys.
-fn facet_check_spec(spec) {
+pub fn facet_check_spec(spec) {
     let problems = []
     __facet_check_keys("spec", spec, ["name", "usage", "version", "about", "epilog", "flags", "options", "positionals", "subcommands", "groups"], problems)
     if spec.name == null { array.push(problems, "spec: needs `name` (the program name)") }
@@ -717,7 +717,7 @@ fn __facet_wants_help(spec, argv) {
 }
 
 /// `name version` for `--version`; "" when the spec has no `version`.
-fn facet_version_text(spec) {
+pub fn facet_version_text(spec) {
     if spec.version == null { return "" }
     return spec.name + " " + conv.to_str(spec.version)
 }
@@ -728,7 +728,7 @@ fn facet_version_text(spec) {
 ///   { action: "error",   text, spec }  a parse error; `spec` is the
 ///                                    subcommand's spec when the error is in one
 ///   { action: "run",     args }    parsed arguments
-fn facet_resolve(spec, argv) {
+pub fn facet_resolve(spec, argv) {
     let subs = __facet_list(spec.subcommands)
     let error_spec = spec
     if len(subs) > 0 && len(argv) > 0 {
@@ -759,7 +759,7 @@ fn facet_resolve(spec, argv) {
 
 /// Print `facet: <name>: <message>`, the usage line and a --help hint, then
 /// exit(2). For a program's own argument checks, so they look like facet's.
-fn facet_fail(spec, message) {
+pub fn facet_fail(spec, message) {
     io.print("facet: " + spec.name + ": " + message)
     io.print(facet_usage(spec))
     io.print("run with --help for the full option list")
@@ -779,7 +779,7 @@ fn __facet_spec_or_exit(spec) {
 /// subcommand's help when given after it, and exits 0; `--version`/`-V`
 /// prints `name version` and exits 0 when the spec has `version`. A spec with
 /// problems (see facet_check_spec) is refused with exit 70.
-fn facet_parse(spec) {
+pub fn facet_parse(spec) {
     __facet_spec_or_exit(spec)
     let r = facet_resolve(spec, sys.args())
     if r.action == "help" || r.action == "version" {
@@ -793,7 +793,7 @@ fn facet_parse(spec) {
 /// Call the handler for the parsed arguments and return its result:
 /// `handlers[args.subcommand]` for a spec with subcommands, `handlers.main`
 /// otherwise. A missing handler is a program error (exit 70).
-fn facet_dispatch(spec, handlers, args) {
+pub fn facet_dispatch(spec, handlers, args) {
     let key = "main"
     if __facet_has_arr(spec.subcommands) { key = args.subcommand }
     for k in collections.keys(handlers) {
@@ -810,6 +810,6 @@ fn facet_dispatch(spec, handlers, args) {
 ///
 ///   facet_run(spec, { add: |args| => do_add(args), status: |args| => do_status(args) })
 ///   facet_run(spec, { main: |args| => run(args) })   // no subcommands
-fn facet_run(spec, handlers) {
+pub fn facet_run(spec, handlers) {
     return facet_dispatch(spec, handlers, facet_parse(spec))
 }

@@ -4,7 +4,7 @@
 // process spawning), then checks the rendered help text. Prints "ok …" /
 // "FAIL …" per case and exits non-zero if anything failed.
 //
-// Run: crush-run run facet_test.crush
+// Run: ./tests/run.sh (it concatenates facet.crush + this file)
 
 /// 1 when the check failed, 0 when it passed — callers accumulate.
 fn check(name, cond) {

@@ -1,12 +1,12 @@
-// demo/todo.crush — a multi-command CLI in one facet_run call.
+// examples/demo/todo.crush — a multi-command CLI in one facet_run call.
 //
 //   todo add <text> [--priority N]
 //   todo list [--all]
 //   todo --version | --help | <subcommand> --help
 //
 // Run from the facet repo root (facet is imported, no concatenation):
-//   crush-run run -L . demo/todo.crush -- add "buy milk" -p 2
-//   crush-run run -L . demo/todo.crush -- --help
+//   crush-run run -L . examples/demo/todo.crush -- add "buy milk" -p 2
+//   crush-run run -L . examples/demo/todo.crush -- --help
 
 import facet { facet_run, facet_fail }
 
