@@ -1,0 +1,55 @@
+@caison { version: "1.0" }
+
+schema: "milestones/1"
+
+project: {
+  name: "facet"
+  kind: "repo"
+  lifecycle: "shipped" @verified { at: "2026-11-18", by: "altair" }
+  lifecycle_since: "2026-10-31"
+  home: "zorro"
+  ticket_prefix: "FACET"
+  summary: "a CLI argument library for Crush, written in Crush (a whole CLI in one call); v0.3.0 released 2026-11-14 with import-first use, count flags and option groups; consumed by polish and awesome-crush games/v2"
+  stewards: ["altair"]
+  evidence: {
+    default_branch: "main"
+  }
+}
+
+milestones: [
+  {
+    id: "F0.2"
+    title: "facet 0.2: a whole CLI in one call"
+    status: "done" @verified { at: "2026-11-18", by: "altair" }
+    done_at: "2026-10-31"
+    version: "v0.2.0"
+    done_when: [
+      { claim: "PR #1 merged", check: { kind: "merged", pr: "1" } },
+      { claim: "v0.2.0 tagged", check: { kind: "tag", pattern: "v0.2.0" } },
+    ]
+  },
+  {
+    id: "F0.3"
+    title: "facet 0.3: import-first, count flags, option groups"
+    status: "done" @verified { at: "2026-11-18", by: "altair" }
+    done_at: "2026-11-14"
+    version: "v0.3.0"
+    tickets: ["FACET-2", "FACET-4", "FACET-5", "FACET-6", "FACET-9"]
+    done_when: [
+      { claim: "release PR #9 merged", check: { kind: "merged", pr: "9" } },
+      { claim: "v0.3.0 tagged", check: { kind: "tag", pattern: "v0.3.0" } },
+    ]
+    notes: "the v0.3 plan itself (FACET-3, draft #4) was never merged; the work shipped without it"
+  },
+  {
+    id: "F0.4"
+    title: "visibility stage 2: API marked pub; internals story corrected"
+    status: "next" @verified { at: "2026-11-18", by: "altair" }
+    tickets: ["FACET-11"]
+    depends_on: ["crush-ast:VIS"]
+    done_when: [
+      { claim: "FACET-11 PR #12 merged (crush-ast#520)", check: { kind: "merged", pr: "12" } },
+      "issue #10: docs and tests say what __facet_* imports really do",
+    ]
+  },
+]
